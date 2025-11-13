@@ -1,60 +1,64 @@
 # GeoVision Camera Toolkit
 
-Modular utilities for working with GeoVision dual RGB and thermal IP cameras.
+Modular utilities for GeoVision dual RGB and thermal IP cameras.
 
-## Structure
+## Quick Start
 
-- `geovision/` – Core Python package
-  - `config.py` – Shared configuration and credential helpers
-  - `streams.py` – Threaded RTSP capture abstractions
-  - `temperature.py` – HTTP API helpers for temperature queries
-  - `overlay.py` – Drawing helpers for OpenCV overlays
-- `app.py` – Flask application serving RGB and thermal streams side by side
-- `temp_test.py` – Interactive thermal viewer with click-to-measure functionality
-- `record_test.py` – Dual stream viewer with optional recording 
-- `demo.py` – Minimal RGB stream viewer example
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-## Usage
+# Configure camera credentials (optional - defaults provided)
+export GEOVISION_IP="192.168.0.10"
+export GEOVISION_USER="admin"
+export GEOVISION_PASS="admin123"
 
-1. Install dependencies:
+# Run web viewer
+python app.py
+# Visit http://localhost:8000
+```
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Functionalities
 
-2. Configure credentials (defaults can be overridden with environment variables):
+### 🌐 Web Viewer (`app.py`)
+- **Dual stream display**: RGB and thermal streams side by side
+- **Temperature measurement**: Click on thermal stream to measure temperature
+- **Auto-refresh**: Temperature updates every 1 second
+- **Origin measurement**: Automatically measures at (0,0) on page load
 
-   ```bash
-   export GEOVISION_IP="192.168.0.10"
-   export GEOVISION_USER="admin"
-   export GEOVISION_PASS="admin123"
-   export GEOVISION_RGB_PROFILE="profile1"
-   export GEOVISION_THERMAL_PROFILE="profile4"
-   ```
+**Access**: `python app.py` → `http://localhost:8000`
 
-3. Run the Flask web viewer:
+### 📹 Interactive Thermal Viewer (`temp_test.py`)
+- **Click-to-measure**: Click anywhere on thermal stream for temperature
+- **Real-time updates**: Temperature refreshes automatically
+- **Visual feedback**: Crosshair and temperature overlay
 
-   ```bash
-   python app.py
-   ```
+**Access**: `python temp_test.py`
 
-   Visit `http://localhost:8000` to see both streams side by side.
+### 🎥 Dual Stream Recorder (`record_test.py`)
+- **Simultaneous recording**: Record both RGB and thermal streams
+- **Interactive controls**: Press 'r' to start/stop, 'q' to quit
+- **Timestamped files**: Saves to `rgb_YYYYMMDD_HHMMSS.avi` and `thermal_YYYYMMDD_HHMMSS.avi`
 
-4. Run the interactive thermal viewer:
+**Access**: `python record_test.py`
 
-   ```bash
-   python temp_test.py
-   ```
+### 🧪 Temperature API Test (`temperature_api_test.py`)
+- **API testing**: Test camera temperature API endpoints
+- **ROI statistics**: Get min/max/avg temperature for configured regions
+- **Dot temperature**: Test point temperature measurement
 
-5. Record RGB and thermal streams:
+**Access**: `python temperature_api_test.py`
 
-   ```bash
-   python record_test.py
-   ```
+### 📺 Simple RGB Viewer (`demo.py`)
+- **Basic stream viewer**: Minimal RGB stream display
 
-## Notes
+**Access**: `python demo.py`
 
-- The Flask app exposes `/video/rgb` and `/video/thermal` MJPEG endpoints
-  suitable for embedding in dashboards.
-- OpenCV connections are forced over TCP by default for reliability.
-- Temperature utilities talk to the camera's HTTP API and return values in °C.
+## Configuration
+
+Set environment variables to override defaults:
+- `GEOVISION_IP` - Camera IP address (default: 192.168.0.10)
+- `GEOVISION_USER` - Username (default: admin)
+- `GEOVISION_PASS` - Password (default: admin123)
+- `GEOVISION_RGB_PROFILE` - RGB stream profile (default: profile1)
+- `GEOVISION_THERMAL_PROFILE` - Thermal stream profile (default: profile4)
