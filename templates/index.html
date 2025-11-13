@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>GeoVision Dual Stream</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #111; color: #eee; margin: 0; }
+      header { padding: 1rem; text-align: center; background: #1c1c1c; }
+      main { display: flex; justify-content: center; gap: 1rem; padding: 1rem; flex-wrap: wrap; }
+      .stream { background: #222; padding: 0.5rem; border-radius: 0.5rem; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+      .stream h2 { text-align: center; margin-top: 0; }
+      .stream img { display: block; max-width: 100%; height: auto; border-radius: 0.25rem; }
+      footer { text-align: center; padding: 0.5rem; font-size: 0.85rem; color: #888; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>GeoVision Dual Stream Viewer</h1>
+      <p>RGB and Thermal feeds displayed side by side</p>
+    </header>
+    <main>
+      <section class="stream">
+        <h2>RGB Stream</h2>
+        <img src="/video/rgb" alt="RGB Stream" />
+      </section>
+      <section class="stream">
+        <h2>Thermal Stream</h2>
+        <img src="/video/thermal" alt="Thermal Stream" />
+      </section>
+    </main>
+    <footer>
+      <span>GeoVision local viewer. Ensure camera credentials are configured via environment variables.</span>
+    </footer>
+  </body>
+</html>
