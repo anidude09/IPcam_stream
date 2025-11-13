@@ -3,14 +3,12 @@ import xml.etree.ElementTree as ET
 from requests.auth import HTTPBasicAuth
 
 # --- Configuration ---
-# !! IMPORTANT: Update these values based on your camera's setup
 IP_ADDRESS = "192.168.0.10"
 USERNAME = "admin"
-PASSWORD = "admin123"  # Replace with your actual password
+PASSWORD = "admin123"
 THERMAL_CHANNEL = 2  # Typically 2 for the thermal channel
 
 
-# --- End Configuration ---
 
 # 1. Function to get ROI (Region of Interest) summary stats
 def get_roi_stats(channel=THERMAL_CHANNEL):
@@ -98,7 +96,6 @@ def get_dot_temp(x, y, channel=THERMAL_CHANNEL):
 
         root = ET.fromstring(r.text)
 
-        # FIX: Add '{*}' to ignore the XML namespace
         val = root.find(".//{*}temperature")
         hot_x_val = root.find(".//{*}hotX")
         hot_y_val = root.find(".//{*}hotY")
@@ -109,7 +106,6 @@ def get_dot_temp(x, y, channel=THERMAL_CHANNEL):
             print("Warning: Could not find 'temperature', 'hotX', or 'hotY' in XML response.")
             return None
 
-        # FIX: Convert value from "2825" to 28.25
         temp_c = float(val.text) / 100.0
 
         # Get the confirmed coordinates from the camera's response
