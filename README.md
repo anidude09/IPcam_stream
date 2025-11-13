@@ -11,7 +11,7 @@ Modular utilities for working with GeoVision dual RGB and thermal IP cameras.
   - `overlay.py` – Drawing helpers for OpenCV overlays
 - `app.py` – Flask application serving RGB and thermal streams side by side
 - `temp_test.py` – Interactive thermal viewer with click-to-measure functionality
-- `record_test.py` – Dual stream viewer with optional recording support
+- `record_test.py` – Dual stream viewer with optional recording 
 - `demo.py` – Minimal RGB stream viewer example
 
 ## Usage
