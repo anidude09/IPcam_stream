@@ -20,7 +20,7 @@ python app.py
 
 ## Functionalities
 
-### 🌐 Web Viewer (`app.py`)
+### Web Viewer (`app.py`)
 - **Dual stream display**: RGB and thermal streams side by side
 - **Temperature measurement**: Click on thermal stream to measure temperature
 - **Auto-refresh**: Temperature updates every 1 second
@@ -28,28 +28,28 @@ python app.py
 
 **Access**: `python app.py` → `http://localhost:8000`
 
-### 📹 Interactive Thermal Viewer (`temp_test.py`)
+### Interactive Thermal Viewer (`temp_test.py`)
 - **Click-to-measure**: Click anywhere on thermal stream for temperature
 - **Real-time updates**: Temperature refreshes automatically
 - **Visual feedback**: Crosshair and temperature overlay
 
 **Access**: `python temp_test.py`
 
-### 🎥 Dual Stream Recorder (`record_test.py`)
+### Dual Stream Recorder (`record_test.py`)
 - **Simultaneous recording**: Record both RGB and thermal streams
 - **Interactive controls**: Press 'r' to start/stop, 'q' to quit
 - **Timestamped files**: Saves to `rgb_YYYYMMDD_HHMMSS.avi` and `thermal_YYYYMMDD_HHMMSS.avi`
 
 **Access**: `python record_test.py`
 
-### 🧪 Temperature API Test (`temperature_api_test.py`)
+### Temperature API Test (`temperature_api_test.py`)
 - **API testing**: Test camera temperature API endpoints
 - **ROI statistics**: Get min/max/avg temperature for configured regions
 - **Dot temperature**: Test point temperature measurement
 
 **Access**: `python temperature_api_test.py`
 
-### 📺 Simple RGB Viewer (`demo.py`)
+### Simple RGB Viewer (`demo.py`)
 - **Basic stream viewer**: Minimal RGB stream display
 
 **Access**: `python demo.py`
