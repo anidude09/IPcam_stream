@@ -44,6 +44,7 @@ class TemperatureClient:
 </config>"""
         headers = {"Content-Type": "application/xml"}
         try:
+            print(f"[TemperatureClient] Requesting temperature at ({x}, {y}) from {url}")
             response = requests.post(
                 url,
                 data=payload,
@@ -52,9 +53,13 @@ class TemperatureClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
+            print(f"[TemperatureClient] Response status: {response.status_code}")
+            print(f"[TemperatureClient] Response body: {response.text[:500]}")  # First 500 chars
             return _parse_dot_response(response.text)
         except requests.RequestException as exc:
-            print(f"TemperatureClient.get_dot_temperature error: {exc}")
+            print(f"[TemperatureClient] Request error: {exc}")
+            if hasattr(exc, 'response') and exc.response is not None:
+                print(f"[TemperatureClient] Error response: {exc.response.text[:500]}")
             return None
 
 
@@ -95,21 +100,40 @@ def _parse_dot_response(xml_text: str) -> Optional[Tuple[float, int, int]]:
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
-        print(f"Dot XML parse error: {exc}\nResponse: {xml_text}")
+        print(f"[Parse Error] Dot XML parse error: {exc}\nResponse: {xml_text[:500]}")
         return None
 
     temperature_node = root.find(".//{*}temperature")
     x_node = root.find(".//{*}hotX")
     y_node = root.find(".//{*}hotY")
+    
+    if temperature_node is None:
+        print(f"[Parse Error] Could not find temperature node in XML")
+    if x_node is None:
+        print(f"[Parse Error] Could not find hotX node in XML")
+    if y_node is None:
+        print(f"[Parse Error] Could not find hotY node in XML")
+    
     if not all([temperature_node is not None, x_node is not None, y_node is not None]):
+        print(f"[Parse Error] Missing required nodes. XML: {xml_text[:500]}")
         return None
 
     try:
-        temp = float(temperature_node.text) / 100.0
-        x_val = int(x_node.text)
-        y_val = int(y_node.text)
+        temp_raw = temperature_node.text
+        x_raw = x_node.text
+        y_raw = y_node.text
+        
+        temp = float(temp_raw) / 100.0
+        x_val = int(x_raw)
+        y_val = int(y_raw)
+        
+        print(f"[Parse Success] Parsed: temp_raw={temp_raw}, x_raw={x_raw}, y_raw={y_raw}")
+        print(f"[Parse Success] Converted: temp={temp:.2f}°C, x={x_val}, y={y_val}")
+        
         return temp, x_val, y_val
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as e:
+        print(f"[Parse Error] Value conversion error: {e}")
+        print(f"[Parse Error] Values: temp={temperature_node.text if temperature_node is not None else 'None'}, x={x_node.text if x_node is not None else 'None'}, y={y_node.text if y_node is not None else 'None'}")
         return None
 
 

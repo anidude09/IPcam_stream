@@ -4,10 +4,11 @@ from __future__ import annotations
 import atexit
 from typing import Dict
 
-from flask import Flask, Response, abort, render_template
+from flask import Flask, Response, abort, jsonify, render_template, request
 
 from geovision.config import DEFAULT_CREDENTIALS, RGB_STREAM, THERMAL_STREAM
 from geovision.streams import RTSPStream
+from geovision.temperature import TemperatureClient
 
 
 def create_streams() -> Dict[str, RTSPStream]:
@@ -36,6 +37,34 @@ def create_app() -> Flask:
     @app.route("/healthz")
     def healthz():
         return {"status": "ok"}
+
+    @app.route("/temperature")
+    def temperature():
+        """Get temperature at a specific pixel coordinate."""
+        x = request.args.get("x", type=int)
+        y = request.args.get("y", type=int)
+        
+        if x is None or y is None:
+            return jsonify({"error": "Missing x or y parameter"}), 400
+        
+        # Log the request for debugging
+        print(f"[Temperature API] Request received: x={x}, y={y}")
+        
+        client = TemperatureClient(credentials=DEFAULT_CREDENTIALS, channel=THERMAL_STREAM.channel)
+        result = client.get_dot_temperature(x, y)
+        
+        if result is None:
+            print(f"[Temperature API] Failed to get temperature for ({x}, {y})")
+            return jsonify({"error": "Failed to get temperature"}), 500
+        
+        temp_c, resp_x, resp_y = result
+        print(f"[Temperature API] Response: temp={temp_c:.2f}°C, x={resp_x}, y={resp_y} (requested: {x}, {y})")
+        
+        return jsonify({
+            "temperature": round(temp_c, 2),
+            "x": resp_x,
+            "y": resp_y
+        })
 
     @app.route("/video/<stream_name>")
     def video(stream_name: str):
