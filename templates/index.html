@@ -2,34 +2,99 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GeoVision Dual Stream</title>
     <style>
-      body { font-family: Arial, sans-serif; background: #111; color: #eee; margin: 0; }
-      header { padding: 1rem; text-align: center; background: #1c1c1c; }
-      main { display: flex; justify-content: center; gap: 1rem; padding: 1rem; flex-wrap: wrap; }
-      .stream { background: #222; padding: 0.5rem; border-radius: 0.5rem; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
-      .stream h2 { text-align: center; margin-top: 0; }
-      .stream img { display: block; max-width: 100%; height: auto; border-radius: 0.25rem; }
-      footer { text-align: center; padding: 0.5rem; font-size: 0.85rem; color: #888; }
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+        background: #0a0a0a;
+        color: #e0e0e0;
+        margin: 0;
+        padding: 0;
+        overflow-x: hidden;
+      }
+      header {
+        padding: 0.75rem 1rem;
+        text-align: center;
+        background: #1a1a1a;
+        border-bottom: 1px solid #333;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #fff;
+      }
+      main {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem;
+        flex-wrap: nowrap;
+        max-width: 100vw;
+      }
+      .stream {
+        flex: 1;
+        min-width: 0;
+        background: #151515;
+        padding: 0.75rem;
+        border-radius: 0.5rem;
+        border: 1px solid #2a2a2a;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+      .stream h2 {
+        text-align: center;
+        margin: 0 0 0.75rem 0;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #ccc;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .stream img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 0.25rem;
+        background: #000;
+        image-rendering: auto;
+      }
+      footer {
+        text-align: center;
+        padding: 0.5rem;
+        font-size: 0.75rem;
+        color: #666;
+        margin-top: 1rem;
+      }
+      @media (max-width: 768px) {
+        main {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .stream {
+          flex: none;
+        }
+      }
     </style>
   </head>
   <body>
     <header>
-      <h1>GeoVision Dual Stream Viewer</h1>
-      <p>RGB and Thermal feeds displayed side by side</p>
+      <h1>GeoVision Stream Viewer</h1>
     </header>
     <main>
       <section class="stream">
-        <h2>RGB Stream</h2>
+        <h2>RGB</h2>
         <img src="/video/rgb" alt="RGB Stream" />
       </section>
       <section class="stream">
-        <h2>Thermal Stream</h2>
+        <h2>Thermal</h2>
         <img src="/video/thermal" alt="Thermal Stream" />
       </section>
     </main>
     <footer>
-      <span>GeoVision local viewer. Ensure camera credentials are configured via environment variables.</span>
+      <span>Local viewer</span>
     </footer>
   </body>
 </html>
