@@ -47,6 +47,11 @@ def create_app() -> Flask:
         if x is None or y is None:
             return jsonify({"error": "Missing x or y parameter"}), 400
         
+        # Validate coordinates are non-negative
+        if x < 0 or y < 0:
+            print(f"[Temperature API] Invalid coordinates: x={x}, y={y} (must be non-negative)")
+            return jsonify({"error": "Coordinates must be non-negative"}), 400
+        
         # Log the request for debugging
         print(f"[Temperature API] Request received: x={x}, y={y}")
         
@@ -58,12 +63,23 @@ def create_app() -> Flask:
             return jsonify({"error": "Failed to get temperature"}), 500
         
         temp_c, resp_x, resp_y = result
+        
+        # Check if camera returned different coordinates
+        coord_match = (resp_x == x and resp_y == y)
+        if not coord_match:
+            print(f"[Temperature API] Coordinate mismatch: requested ({x}, {y}), camera returned ({resp_x}, {resp_y})")
+        else:
+            print(f"[Temperature API] Coordinates match: ({x}, {y})")
+        
         print(f"[Temperature API] Response: temp={temp_c:.2f}°C, x={resp_x}, y={resp_y} (requested: {x}, {y})")
         
         return jsonify({
             "temperature": round(temp_c, 2),
             "x": resp_x,
-            "y": resp_y
+            "y": resp_y,
+            "requested_x": x,  # Include requested coordinates for debugging
+            "requested_y": y,
+            "coordinates_match": coord_match
         })
 
     @app.route("/video/<stream_name>")
