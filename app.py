@@ -1,38 +1,71 @@
-"""Flask application exposing RGB and thermal streams side by side."""
+"""Flask application exposing GeoVision and RGM streams side by side."""
 from __future__ import annotations
 
 import atexit
-from typing import Dict
+import os
+import threading
+from typing import Dict, Optional
 
 from flask import Flask, Response, abort, jsonify, render_template, request
 
-from geovision.config import DEFAULT_CREDENTIALS, RGB_STREAM, THERMAL_STREAM
+from geovision.config import DEFAULT_CREDENTIALS, RGB_STREAM, THERMAL_STREAM, CameraCredentials
 from geovision.streams import RTSPStream
 from geovision.temperature import TemperatureClient
+from rgm.streaming import RGMThermalStream
 
 
-def create_streams() -> Dict[str, RTSPStream]:
+def create_streams(credentials: CameraCredentials) -> Dict[str, RTSPStream]:
     streams = {
-        "rgb": RTSPStream(DEFAULT_CREDENTIALS, RGB_STREAM, "RGB"),
-        "thermal": RTSPStream(DEFAULT_CREDENTIALS, THERMAL_STREAM, "Thermal"),
+        "rgb": RTSPStream(credentials, RGB_STREAM, "RGB"),
+        "thermal": RTSPStream(credentials, THERMAL_STREAM, "Thermal"),
     }
     for stream in streams.values():
         stream.start()
     return streams
 
 
+def str_to_bool(value: str) -> bool:
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def create_rgm_stream() -> Optional[RGMThermalStream]:
+    try:
+        stream = RGMThermalStream(
+            device_index=int(os.getenv("RGM_DEVICE_INDEX", "0")),
+            use_msmf=str_to_bool(os.getenv("RGM_USE_MSMF", "false")),
+            view_scale=int(os.getenv("RGM_VIEW_SCALE", "3")),
+            c_min_c=float(os.getenv("RGM_TEMP_MIN_C", "20.0")),
+            c_max_c=float(os.getenv("RGM_TEMP_MAX_C", "40.0")),
+        )
+        stream.start()
+        print("[RGM] Thermal camera initialized")
+        return stream
+    except Exception as exc:
+        print(f"[RGM] Failed to initialize local thermal stream: {exc}")
+        return None
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
-    streams = create_streams()
+    config_lock = threading.Lock()
+    current_credentials = DEFAULT_CREDENTIALS
+    streams = create_streams(current_credentials)
+    rgm_stream = create_rgm_stream()
 
     @atexit.register
     def shutdown_streams() -> None:
         for stream in streams.values():
             stream.stop()
+        if rgm_stream:
+            rgm_stream.stop()
 
     @app.route("/")
     def index():
-        return render_template("index.html")
+        return render_template(
+            "index.html",
+            rgm_available=rgm_stream is not None,
+            geovision=current_credentials,
+        )
 
     @app.route("/healthz")
     def healthz():
@@ -55,7 +88,7 @@ def create_app() -> Flask:
         # Log the request for debugging
         print(f"[Temperature API] Request received: x={x}, y={y}")
         
-        client = TemperatureClient(credentials=DEFAULT_CREDENTIALS, channel=THERMAL_STREAM.channel)
+        client = TemperatureClient(credentials=current_credentials, channel=THERMAL_STREAM.channel)
         result = client.get_dot_temperature(x, y)
         
         if result is None:
@@ -93,6 +126,51 @@ def create_app() -> Flask:
             mimetype="multipart/x-mixed-replace; boundary=frame",
         )
 
+    @app.route("/video/rgm")
+    def video_rgm():
+        if rgm_stream is None:
+            abort(503, description="RGM camera not available")
+        return Response(
+            rgm_stream.mjpeg_generator(framerate_hint=15.0),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
+
+    @app.route("/rgm/center_temperature")
+    def rgm_center_temperature():
+        if rgm_stream is None:
+            return jsonify({"error": "RGM camera not available"}), 503
+        data = rgm_stream.latest_center()
+        return jsonify(data)
+
+    @app.route("/configure/geovision", methods=["POST"])
+    def configure_geovision():
+        nonlocal streams, current_credentials
+        payload = request.get_json(silent=True) or request.form
+        ip = (payload.get("ip") or "").strip()
+        username = (payload.get("username") or "").strip()
+        password = payload.get("password") or ""
+
+        if not ip or not username:
+            return jsonify({"status": "error", "message": "IP address and username are required"}), 400
+
+        new_credentials = CameraCredentials(ip_address=ip, username=username, password=password)
+
+        with config_lock:
+            try:
+                new_streams = create_streams(new_credentials)
+            except Exception as exc:  # pragma: no cover - hardware dependent
+                print(f"[GeoVision] Failed to apply new credentials: {exc}")
+                return jsonify({"status": "error", "message": "Failed to connect with provided settings"}), 500
+
+            old_streams = streams
+            streams = new_streams
+            current_credentials = new_credentials
+
+        for stream in old_streams.values():
+            stream.stop()
+
+        return jsonify({"status": "ok", "message": "GeoVision credentials updated"})
+
     return app
 
 
@@ -100,4 +178,4 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    app.run(host="0.0.0.0", port=8000,use_reloader=False, debug=True)

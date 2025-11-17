@@ -22,9 +22,11 @@ python app.py
 
 ### Web Viewer (`app.py`)
 - **Dual stream display**: RGB and thermal streams side by side
+- **RGM thermal stream**: Optional USB/HDMI thermal feed rendered next to GeoVision streams
 - **Temperature measurement**: Click on thermal stream to measure temperature
 - **Auto-refresh**: Temperature updates every 1 second
 - **Origin measurement**: Automatically measures at (0,0) on page load
+- **Credential form**: Update GeoVision IP/username/password from the UI to restart streams without editing env vars
 
 **Access**: `python app.py` → `http://localhost:8000`
 
@@ -54,6 +56,11 @@ python app.py
 
 **Access**: `python demo.py`
 
+### RGM Thermal Stream (Integrated)
+- **Local camera feed**: Opens a Windows-friendly backend (DirectShow/MSMF) for USB/HDMI thermal sensors
+- **Center-point temperature**: Displays Celsius/Fahrenheit reading for the center pixel
+- **Colorized output**: Applies an Inferno colormap with adjustable temperature window
+
 ## Configuration
 
 Set environment variables to override defaults:
@@ -62,3 +69,7 @@ Set environment variables to override defaults:
 - `GEOVISION_PASS` - Password (default: admin123)
 - `GEOVISION_RGB_PROFILE` - RGB stream profile (default: profile1)
 - `GEOVISION_THERMAL_PROFILE` - Thermal stream profile (default: profile4)
+- `RGM_DEVICE_INDEX` - Local camera index (default: 0)
+- `RGM_USE_MSMF` - Use MSMF backend instead of DirectShow (`true`/`false`, default: false)
+- `RGM_VIEW_SCALE` - Upscale factor for display (default: 3)
+- `RGM_TEMP_MIN_C` / `RGM_TEMP_MAX_C` - Temperature window for colorization (defaults: 20 / 40)

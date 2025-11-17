@@ -8,14 +8,22 @@
 
   // DOM Elements
   const thermalImg = document.getElementById('thermal-img');
+  const rgbImg = document.querySelector('[data-stream="rgb"]');
   const thermalContainer = document.getElementById('thermal-container');
   const thermalOverlay = document.getElementById('thermal-overlay');
   const thermalCrosshair = document.getElementById('thermal-crosshair');
   const thermalTemp = document.getElementById('thermal-temp');
+  const rgmTemp = document.getElementById('rgm-temp');
+  const rgmContainer = document.getElementById('rgm-container');
+  const geovisionForm = document.getElementById('geovision-form');
+  const geovisionStatus = document.getElementById('geovision-status');
 
   // State
   let selectedPoint = null;
   let refreshInterval = null;
+  const rgmPollIntervalMs = 1000;
+  let rgmPollHandle = null;
+  const rgmAvailable = rgmContainer ? rgmContainer.dataset.available === 'true' : false;
   
   // Coordinate system configuration
   // If camera uses flipped X coordinates (0,0 at top-right instead of top-left)
@@ -417,5 +425,127 @@
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(handleResize, 100);
   });
+
+  /**
+   * Poll the RGM center temperature endpoint and update badge
+   */
+  async function pollRgmCenterTemperature() {
+    if (!rgmAvailable || !rgmTemp) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/rgm/center_temperature', { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      if (typeof data.temp_c === 'number') {
+        const valueC = data.temp_c.toFixed(2);
+        const valueF = typeof data.temp_f === 'number' ? data.temp_f.toFixed(2) : null;
+        rgmTemp.textContent = valueF
+          ? `Center: ${valueC} °C (${valueF} °F)`
+          : `Center: ${valueC} °C`;
+        rgmTemp.classList.remove('muted');
+      } else {
+        rgmTemp.textContent = 'Center temperature unavailable';
+        rgmTemp.classList.add('muted');
+      }
+    } catch (error) {
+      console.error('[RGM] Center temperature fetch failed:', error);
+      rgmTemp.textContent = 'Center temperature unavailable';
+      rgmTemp.classList.add('muted');
+    } finally {
+      rgmPollHandle = setTimeout(pollRgmCenterTemperature, rgmPollIntervalMs);
+    }
+  }
+
+  if (rgmAvailable && rgmTemp) {
+    rgmTemp.textContent = 'Center: -- °C';
+    rgmTemp.classList.add('muted');
+    pollRgmCenterTemperature();
+  } else if (rgmTemp) {
+    rgmTemp.textContent = 'RGM camera unavailable';
+    rgmTemp.classList.add('muted');
+  }
+
+  /**
+   * Update GeoVision status badge text + color
+   * @param {string} text 
+   * @param {'muted'|'success'|'error'} state 
+   */
+  function setGeoVisionStatus(text, state = 'muted') {
+    if (!geovisionStatus) return;
+    geovisionStatus.textContent = text;
+    geovisionStatus.classList.remove('muted', 'success', 'error');
+    geovisionStatus.classList.add(state);
+  }
+
+  if (geovisionForm && geovisionStatus) {
+    const passwordInput = geovisionForm.querySelector('#gv-password');
+    const submitButton = geovisionForm.querySelector('button[type="submit"]');
+
+    geovisionForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(geovisionForm);
+      const payload = {
+        ip: (formData.get('ip') || '').trim(),
+        username: (formData.get('username') || '').trim(),
+        password: formData.get('password') || ''
+      };
+
+      if (!payload.ip || !payload.username) {
+        setGeoVisionStatus('IP and username required', 'error');
+        return;
+      }
+
+      setGeoVisionStatus('Applying...', 'muted');
+      if (submitButton) {
+        submitButton.disabled = true;
+      }
+
+      try {
+        const response = await fetch('/configure/geovision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok || result.status !== 'ok') {
+          throw new Error(result.message || 'Failed to update');
+        }
+        setGeoVisionStatus('Streams restarting with new settings', 'success');
+        refreshGeoVisionStreams();
+        if (passwordInput) {
+          passwordInput.value = '';
+        }
+      } catch (error) {
+        console.error('[GeoVision Config] Update failed:', error);
+        setGeoVisionStatus(error.message || 'Update failed', 'error');
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+        }
+      }
+    });
+  }
+  /**
+   * Force RGB and thermal streams to reconnect by busting cache.
+   */
+  function refreshGeoVisionStreams() {
+    const timestamp = Date.now();
+    if (rgbImg) {
+      rgbImg.src = `/video/rgb?ts=${timestamp}`;
+    }
+    if (thermalImg) {
+      thermalImg.src = `/video/thermal?ts=${timestamp + 1}`;
+    }
+
+    // Reset overlay state so the user clicks again with new feed.
+    selectedPoint = null;
+    if (thermalOverlay) {
+      thermalOverlay.style.display = 'none';
+    }
+  }
 })();
 
