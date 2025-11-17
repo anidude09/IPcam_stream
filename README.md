@@ -1,6 +1,7 @@
 # GeoVision Camera Toolkit
 
-Simple Flask UI for monitoring a GeoVision RGB/thermal IP camera alongside a local RGM thermal sensor. Click anywhere on the GeoVision thermal stream to read temperatures and watch the RGM center-point temperature update live.
+ Flask UI for monitoring a GeoVision RGB/thermal IP camera alongside a local RGM thermal sensor.
+
 
 ![Web UI](image.png)
 
@@ -8,7 +9,7 @@ Simple Flask UI for monitoring a GeoVision RGB/thermal IP camera alongside a loc
 
 ```powershell
 cd C:\Users\aniruddh\IPcam_stream
-python -m venv .venv          # optional but recommended
+python -m venv .venv          
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
@@ -28,7 +29,7 @@ In the browser, use the **GeoVision Camera Settings** form to update IP/username
 - `RGM_VIEW_SCALE` (default `3`)
 - `RGM_TEMP_MIN_C` / `RGM_TEMP_MAX_C` (defaults `20` / `40`)
 
-Other helper scripts remain available:
+Other helpers:
 
 - `python temp_test.py` – stand-alone GeoVision thermal viewer
 - `python record_test.py` – dual-stream recorder
