@@ -1,75 +1,36 @@
 # GeoVision Camera Toolkit
 
-Modular utilities for GeoVision dual RGB and thermal IP cameras.
+Simple Flask UI for monitoring a GeoVision RGB/thermal IP camera alongside a local RGM thermal sensor. Click anywhere on the GeoVision thermal stream to read temperatures and watch the RGM center-point temperature update live.
 
-## Quick Start
+![Web UI](image.png)
 
-```bash
-# Install dependencies
+## Run It
+
+```powershell
+cd C:\Users\aniruddh\IPcam_stream
+python -m venv .venv          # optional but recommended
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Configure camera credentials (optional - defaults provided)
-export GEOVISION_IP="192.168.0.10"
-export GEOVISION_USER="admin"
-export GEOVISION_PASS="admin123"
+# (optional) preset defaults; you can also edit them later in the UI form
+$env:GEOVISION_IP="192.168.0.10"
+$env:GEOVISION_USER="admin"
+$env:GEOVISION_PASS="admin123"
 
-# Run web viewer
 python app.py
-# Visit http://localhost:8000
+# open http://localhost:8000
 ```
 
-## Functionalities
+In the browser, use the **GeoVision Camera Settings** form to update IP/username/password; the RGB and thermal panes will restart automatically. RGM stream settings (device index, MSMF vs DirectShow, etc.) can still be overridden via environment variables when needed:
 
-### Web Viewer (`app.py`)
-- **Dual stream display**: RGB and thermal streams side by side
-- **RGM thermal stream**: Optional USB/HDMI thermal feed rendered next to GeoVision streams
-- **Temperature measurement**: Click on thermal stream to measure temperature
-- **Auto-refresh**: Temperature updates every 1 second
-- **Origin measurement**: Automatically measures at (0,0) on page load
-- **Credential form**: Update GeoVision IP/username/password from the UI to restart streams without editing env vars
+- `RGM_DEVICE_INDEX` (default `0`)
+- `RGM_USE_MSMF` (`true`/`false`, default `false`)
+- `RGM_VIEW_SCALE` (default `3`)
+- `RGM_TEMP_MIN_C` / `RGM_TEMP_MAX_C` (defaults `20` / `40`)
 
-**Access**: `python app.py` → `http://localhost:8000`
+Other helper scripts remain available:
 
-### Interactive Thermal Viewer (`temp_test.py`)
-- **Click-to-measure**: Click anywhere on thermal stream for temperature
-- **Real-time updates**: Temperature refreshes automatically
-- **Visual feedback**: Crosshair and temperature overlay
-
-**Access**: `python temp_test.py`
-
-### Dual Stream Recorder (`record_test.py`)
-- **Simultaneous recording**: Record both RGB and thermal streams
-- **Interactive controls**: Press 'r' to start/stop, 'q' to quit
-- **Timestamped files**: Saves to `rgb_YYYYMMDD_HHMMSS.avi` and `thermal_YYYYMMDD_HHMMSS.avi`
-
-**Access**: `python record_test.py`
-
-### Temperature API Test (`temperature_api_test.py`)
-- **API testing**: Test camera temperature API endpoints
-- **ROI statistics**: Get min/max/avg temperature for configured regions
-- **Dot temperature**: Test point temperature measurement
-
-**Access**: `python temperature_api_test.py`
-
-### Simple RGB Viewer (`demo.py`)
-- **Basic stream viewer**: Minimal RGB stream display
-
-**Access**: `python demo.py`
-
-### RGM Thermal Stream (Integrated)
-- **Local camera feed**: Opens a Windows-friendly backend (DirectShow/MSMF) for USB/HDMI thermal sensors
-- **Center-point temperature**: Displays Celsius/Fahrenheit reading for the center pixel
-- **Colorized output**: Applies an Inferno colormap with adjustable temperature window
-
-## Configuration
-
-Set environment variables to override defaults:
-- `GEOVISION_IP` - Camera IP address (default: 192.168.0.10)
-- `GEOVISION_USER` - Username (default: admin)
-- `GEOVISION_PASS` - Password (default: admin123)
-- `GEOVISION_RGB_PROFILE` - RGB stream profile (default: profile1)
-- `GEOVISION_THERMAL_PROFILE` - Thermal stream profile (default: profile4)
-- `RGM_DEVICE_INDEX` - Local camera index (default: 0)
-- `RGM_USE_MSMF` - Use MSMF backend instead of DirectShow (`true`/`false`, default: false)
-- `RGM_VIEW_SCALE` - Upscale factor for display (default: 3)
-- `RGM_TEMP_MIN_C` / `RGM_TEMP_MAX_C` - Temperature window for colorization (defaults: 20 / 40)
+- `python temp_test.py` – stand-alone GeoVision thermal viewer
+- `python record_test.py` – dual-stream recorder
+- `python temperature_api_test.py` – CLI probe of the GeoVision API
+- `python demo.py` – simple RGB-only window
