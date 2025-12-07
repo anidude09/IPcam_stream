@@ -1,4 +1,4 @@
-/* Global Styles */
+/* ==================== Global Styles ==================== */
 * {
   box-sizing: border-box;
 }
@@ -12,11 +12,11 @@ body {
   overflow-x: hidden;
 }
 
-/* Header Styles */
+/* ==================== Header ==================== */
 header {
   padding: 0.75rem 1rem;
   text-align: center;
-  background: #1a1a1a;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   border-bottom: 1px solid #333;
 }
 
@@ -27,35 +27,37 @@ header h1 {
   color: #fff;
 }
 
-/* Config Panel */
+/* ==================== Config Panel (Add Camera) ==================== */
 .config-panel {
-  margin: 1rem auto 0;
-  width: min(960px, 100%);
-  padding: 1rem;
-  background: #121212;
-  border-bottom: 1px solid #222;
+  margin: 1rem auto;
+  max-width: 900px;
+  padding: 1.25rem;
+  background: linear-gradient(145deg, #141428 0%, #1a1a2e 100%);
+  border: 1px solid #2a2a4a;
+  border-radius: 0.75rem;
 }
 
 .config-header {
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
 }
 
 .config-header h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 600;
+  color: #7eb8ff;
 }
 
 .config-header p {
-  margin: 0.2rem 0 0 0;
-  color: #999;
+  margin: 0.25rem 0 0 0;
+  color: #888;
   font-size: 0.85rem;
 }
 
 .config-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
 }
 
 .form-row {
@@ -66,122 +68,212 @@ header h1 {
 .form-row label {
   font-size: 0.8rem;
   color: #aaa;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.35rem;
 }
 
 .form-row input {
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 0.35rem;
-  padding: 0.5rem 0.6rem;
+  background: #1e1e2e;
+  border: 1px solid #3a3a5a;
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
   color: #fff;
   font-size: 0.9rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .form-row input:focus {
   outline: none;
-  border-color: #4c8eda;
-  box-shadow: 0 0 0 1px rgba(76, 142, 218, 0.3);
+  border-color: #5a8dee;
+  box-shadow: 0 0 0 2px rgba(90, 141, 238, 0.2);
+}
+
+.form-row input::placeholder {
+  color: #666;
 }
 
 .form-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
   grid-column: 1 / -1;
+  margin-top: 0.5rem;
 }
 
-.form-actions button {
-  background: #4c8eda;
+/* ==================== Buttons ==================== */
+.btn-primary {
+  background: linear-gradient(135deg, #5a8dee 0%, #4a7dd4 100%);
   color: #fff;
   border: none;
-  border-radius: 0.35rem;
-  padding: 0.55rem 0.9rem;
+  border-radius: 0.4rem;
+  padding: 0.65rem 1.25rem;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
-.form-actions button:hover {
-  background: #417bc1;
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(90, 141, 238, 0.3);
 }
 
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-remove {
+  background: transparent;
+  border: 1px solid #ff6b6b;
+  color: #ff6b6b;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-remove:hover {
+  background: #ff6b6b;
+  color: #fff;
+}
+
+/* ==================== Status Messages ==================== */
 .config-status {
   font-size: 0.85rem;
 }
 
-.muted {
+.config-status.muted {
   color: #777;
 }
 
 .config-status.success {
-  color: #7cd67c;
+  color: #6ee7b7;
 }
 
 .config-status.error {
-  color: #ff8c82;
+  color: #ff8a8a;
 }
 
-/* Main Layout */
+/* ==================== Main Layout ==================== */
 main {
-  display: flex;
-  justify-content: center;
-  align-items: stretch;
-  gap: 1rem;
   padding: 1rem;
-  flex-wrap: wrap;
   max-width: 100vw;
 }
 
-/* Stream Container */
-.stream {
-  flex: 1 1 320px;
-  min-width: 260px;
-  background: #151515;
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid #2a2a2a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+/* ==================== Camera Row (Triple Grid) ==================== */
+.camera-row {
+  background: linear-gradient(145deg, #12121f 0%, #181828 100%);
+  border: 1px solid #2a2a4a;
+  border-radius: 0.75rem;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  animation: fadeIn 0.3s ease-out;
 }
 
-.stream h2 {
-  text-align: center;
-  margin: 0 0 0.75rem 0;
-  font-size: 0.9rem;
+.camera-row-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid #2a2a4a;
+}
+
+.camera-row-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.camera-ip {
+  font-size: 0.8rem;
+  color: #888;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.camera-row-header .btn-remove {
+  margin-left: auto;
+}
+
+/* Triple Stream Grid: RGB | Thermal | RGM */
+.triple-stream-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+/* Single Stream Grid (RGM only when no cameras) */
+.single-stream-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 500px);
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.rgm-only-row .camera-row-header h2 {
+  color: #ffcc66;
+}
+
+/* ==================== Stream Container ==================== */
+.stream {
+  background: #0f0f1a;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid #252538;
+}
+
+.stream h3 {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
   font-weight: 500;
-  color: #ccc;
+  color: #aaa;
+  background: rgba(0, 0, 0, 0.4);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .stream-hint {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: normal;
-  color: #888;
+  color: #666;
+  text-transform: none;
 }
 
 .stream-container {
   position: relative;
-  display: inline-block;
-  width: 100%;
+  display: block;
 }
 
 .stream img {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 0.25rem;
   background: #000;
-  image-rendering: auto;
-  cursor: default;
 }
 
 .stream img.clickable {
   cursor: crosshair;
 }
 
-/* Thermal Overlay Styles */
+/* RGM Stream Styling */
+.rgm-stream {
+  border-color: #3a3428;
+}
+
+.rgm-stream h3 {
+  color: #e0c080;
+  background: rgba(60, 50, 30, 0.4);
+}
+
+/* ==================== Thermal Overlay ==================== */
 .thermal-overlay {
   position: absolute;
   top: 0;
@@ -194,117 +286,160 @@ main {
 
 .thermal-crosshair {
   position: absolute;
-  width: 30px;
-  height: 30px;
-  border: 2px solid #00ff00;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #00ff88;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
 }
 
 .thermal-crosshair::before,
 .thermal-crosshair::after {
   content: '';
   position: absolute;
-  background: #00ff00;
-  box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+  background: #00ff88;
+  box-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
 }
 
 .thermal-crosshair::before {
   top: 50%;
-  left: -15px;
-  width: 15px;
+  left: -10px;
+  width: 10px;
   height: 2px;
   transform: translateY(-50%);
 }
 
 .thermal-crosshair::after {
   left: 50%;
-  top: -15px;
+  top: -10px;
   width: 2px;
-  height: 15px;
+  height: 10px;
   transform: translateX(-50%);
 }
 
 .thermal-temp {
   position: absolute;
-  background: rgba(0, 0, 0, 0.8);
-  color: #00ff00;
-  padding: 0.4rem 0.6rem;
+  background: rgba(0, 0, 0, 0.85);
+  color: #00ff88;
+  padding: 0.35rem 0.55rem;
   border-radius: 0.25rem;
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
-  transform: translate(15px, -50%);
-  border: 1px solid #00ff00;
-  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+  transform: translate(14px, -50%);
+  border: 1px solid #00ff88;
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.25);
+  font-family: 'Consolas', 'Monaco', monospace;
 }
 
 .thermal-temp::before {
   content: '';
   position: absolute;
-  left: -6px;
+  left: -4px;
   top: 50%;
   transform: translateY(-50%);
-  border: 6px solid transparent;
-  border-right-color: #00ff00;
+  border: 4px solid transparent;
+  border-right-color: #00ff88;
 }
 
+/* ==================== RGM Temperature Badge ==================== */
 .rgm-container {
   position: relative;
-  min-height: 200px;
-}
-
-.stream-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  background: #0e0e0e;
-  border: 1px dashed #333;
-  border-radius: 0.25rem;
-  color: #888;
-  text-align: center;
-  padding: 1rem;
 }
 
 .rgm-temp-badge {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  background: rgba(0, 0, 0, 0.75);
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.8);
   border: 1px solid #ff9800;
-  color: #ffddaa;
+  color: #ffcc66;
   padding: 0.35rem 0.6rem;
   border-radius: 0.25rem;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5);
+  font-family: 'Consolas', 'Monaco', monospace;
 }
 
 .rgm-temp-badge.muted {
   border-color: #555;
-  color: #999;
+  color: #888;
 }
 
-/* Footer Styles */
+/* ==================== Stream Placeholder ==================== */
+.stream-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background: #0a0a12;
+  color: #666;
+  text-align: center;
+  padding: 1rem;
+}
+
+.stream-placeholder p {
+  margin: 0.25rem 0;
+}
+
+.stream-placeholder .hint {
+  font-size: 0.8rem;
+  color: #555;
+}
+
+/* ==================== Footer ==================== */
 footer {
   text-align: center;
-  padding: 0.5rem;
+  padding: 0.75rem;
   font-size: 0.75rem;
-  color: #666;
+  color: #555;
+  border-top: 1px solid #1a1a2a;
   margin-top: 1rem;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  main {
-    flex-direction: column;
-    align-items: stretch;
+/* ==================== Responsive Design ==================== */
+@media (max-width: 1200px) {
+  .triple-stream-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
   
-  .stream {
-    flex: none;
+  .triple-stream-grid .rgm-stream {
+    grid-column: 1 / -1;
+    max-width: 50%;
+    justify-self: center;
   }
 }
 
+@media (max-width: 768px) {
+  .config-form {
+    grid-template-columns: 1fr;
+  }
+  
+  .triple-stream-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .triple-stream-grid .rgm-stream {
+    max-width: 100%;
+  }
+  
+  .single-stream-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .camera-row-header {
+    flex-wrap: wrap;
+  }
+  
+  .camera-row-header .btn-remove {
+    margin-left: 0;
+  }
+}
+
+/* ==================== Animations ==================== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

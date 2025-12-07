@@ -1,551 +1,577 @@
 /**
- * GeoVision Stream Viewer - Main JavaScript
- * Handles thermal stream temperature measurement functionality
+ * Multi-Camera GeoVision + RGM Stream Viewer
+ * Layout: GeoVision RGB | GeoVision Thermal | RGM Thermal (per row)
  */
 
 (function() {
   'use strict';
 
-  // DOM Elements
-  const thermalImg = document.getElementById('thermal-img');
-  const rgbImg = document.querySelector('[data-stream="rgb"]');
-  const thermalContainer = document.getElementById('thermal-container');
-  const thermalOverlay = document.getElementById('thermal-overlay');
-  const thermalCrosshair = document.getElementById('thermal-crosshair');
-  const thermalTemp = document.getElementById('thermal-temp');
-  const rgmTemp = document.getElementById('rgm-temp');
-  const rgmContainer = document.getElementById('rgm-container');
-  const geovisionForm = document.getElementById('geovision-form');
-  const geovisionStatus = document.getElementById('geovision-status');
-
-  // State
-  let selectedPoint = null;
-  let refreshInterval = null;
-  const rgmPollIntervalMs = 1000;
-  let rgmPollHandle = null;
-  const rgmAvailable = rgmContainer ? rgmContainer.dataset.available === 'true' : false;
+  // ==================== Configuration ====================
   
-  // Coordinate system configuration
-  // If camera uses flipped X coordinates (0,0 at top-right instead of top-left)
-  // Set this to true to flip X: cameraX = naturalWidth - 1 - calculatedX
-  let flipXCoordinates = false;  // Set to true if (0,0) appears at top-right
+  // GeoVision API uses normalized coordinates (0-10000)
+  const thermalConfig = window.THERMAL_CONFIG || { apiCoordMax: 10000 };
+  const rgmAvailable = window.RGM_AVAILABLE || false;
+  
+  console.log('[Config] Thermal API coordinate max:', thermalConfig.apiCoordMax);
+  console.log('[Config] RGM available:', rgmAvailable);
 
+  // ==================== State Management ====================
+  
+  // Track temperature measurement state per camera
+  const cameraStates = new Map();
+  
+  function getCameraState(cameraId) {
+    if (!cameraStates.has(cameraId)) {
+      cameraStates.set(cameraId, {
+        selectedPoint: null,
+        refreshInterval: null
+      });
+    }
+    return cameraStates.get(cameraId);
+  }
+
+  // ==================== Coordinate Calculation ====================
+  
   /**
-   * Calculate image coordinates from click event
-   * Converts click position to actual video frame pixel coordinates
-   * @param {MouseEvent} event - Click event
-   * @returns {Object|null} Object with frame coordinates (x, y) and display coordinates (displayX, displayY)
+   * Calculate API coordinates from click event on thermal image
+   * GeoVision API uses normalized coordinates (0-10000)
    */
-  function getImageCoords(event) {
-    // Wait for image to be loaded and have natural dimensions
-    // For MJPEG streams, we need to wait for the first frame to load
-    if (thermalImg.complete === false || thermalImg.naturalWidth === 0 || thermalImg.naturalHeight === 0) {
-      console.warn('[Coordinate Calc] Image not fully loaded. naturalWidth:', thermalImg.naturalWidth, 'naturalHeight:', thermalImg.naturalHeight);
-      // Try to use current image dimensions as fallback
-      const imgRect = thermalImg.getBoundingClientRect();
-      if (imgRect.width === 0 || imgRect.height === 0) {
-        return null;
-      }
+  function getApiCoordinates(event, thermalImg) {
+    if (!thermalImg) {
+      console.warn('[Coords] No thermal image provided');
+      return null;
     }
 
-    // Get image bounding rectangle (position and size on screen)
     const imgRect = thermalImg.getBoundingClientRect();
+    
+    // Validate image has dimensions
+    if (imgRect.width <= 0 || imgRect.height <= 0) {
+      console.warn('[Coords] Image has no dimensions:', imgRect);
+      return null;
+    }
 
-    // Calculate click position relative to the image element (not viewport)
     const clickX = event.clientX - imgRect.left;
     const clickY = event.clientY - imgRect.top;
 
-    // Get actual image dimensions
-    // For MJPEG, naturalWidth/Height should be available after first frame loads
-    const naturalWidth = thermalImg.naturalWidth;
-    const naturalHeight = thermalImg.naturalHeight;
-
-    // Validate dimensions
-    if (naturalWidth === 0 || naturalHeight === 0 || imgRect.width === 0 || imgRect.height === 0) {
-      console.error('[Coordinate Calc] Invalid dimensions:', {
-        natural: { width: naturalWidth, height: naturalHeight },
-        displayed: { width: imgRect.width, height: imgRect.height }
-      });
+    // Validate click is within bounds
+    if (clickX < 0 || clickY < 0 || clickX > imgRect.width || clickY > imgRect.height) {
+      console.warn('[Coords] Click outside image bounds');
       return null;
     }
 
-    // Calculate scale factors (how much the image is scaled from natural size)
-    const scaleX = naturalWidth / imgRect.width;
-    const scaleY = naturalHeight / imgRect.height;
+    // Calculate percentage position (clamped to 0-1)
+    const percentX = Math.max(0, Math.min(1, clickX / imgRect.width));
+    const percentY = Math.max(0, Math.min(1, clickY / imgRect.height));
 
-    // Calculate actual pixel coordinates in the video frame
-    // Clamp to valid range to prevent out-of-bounds coordinates
-    let frameX = Math.max(0, Math.min(naturalWidth - 1, Math.round(clickX * scaleX)));
-    let frameY = Math.max(0, Math.min(naturalHeight - 1, Math.round(clickY * scaleY)));
-    
-    // Check if camera coordinate system is flipped horizontally
-    // If (0,0) appears at top-right, we need to flip X coordinate
-    // Camera uses: cameraX = naturalWidth - 1 - frameX
-    const cameraX = flipXCoordinates ? (naturalWidth - 1 - frameX) : frameX;
-    const cameraY = frameY;
-    
-    if (flipXCoordinates) {
-      console.log('[Coordinate Calc] X coordinate flipped:', {
-        calculatedX: frameX,
-        cameraX: cameraX,
-        naturalWidth: naturalWidth
-      });
-    }
+    // Map to API coordinate space (0-10000)
+    const apiMax = thermalConfig.apiCoordMax || 10000;
+    const apiX = Math.round(percentX * apiMax);
+    const apiY = Math.round(percentY * apiMax);
 
-    // Debug logging with detailed information
-    console.log('[Coordinate Calc] Detailed calculation:', {
-      clickPos: { 
-        clientX: event.clientX, 
-        clientY: event.clientY,
-        relativeX: clickX.toFixed(2), 
-        relativeY: clickY.toFixed(2) 
-      },
-      imageRect: { 
-        left: imgRect.left.toFixed(2), 
-        top: imgRect.top.toFixed(2),
-        width: imgRect.width.toFixed(2), 
-        height: imgRect.height.toFixed(2) 
-      },
-      naturalDimensions: { 
-        width: naturalWidth, 
-        height: naturalHeight 
-      },
-      scaleFactors: { 
-        x: scaleX.toFixed(4), 
-        y: scaleY.toFixed(4) 
-      },
-      calculatedFrameCoords: { 
-        x: frameX, 
-        y: frameY 
-      },
-      cameraCoords: {
-        x: cameraX,
-        y: cameraY
-      },
-      validation: {
-        xInRange: frameX >= 0 && frameX < naturalWidth,
-        yInRange: frameY >= 0 && frameY < naturalHeight
-      }
+    console.log('[Coords] Click mapped:', {
+      percent: { x: (percentX * 100).toFixed(1) + '%', y: (percentY * 100).toFixed(1) + '%' },
+      apiCoords: { x: apiX, y: apiY }
     });
 
-    // Return coordinates - keep original clicked position for display
     return {
-      x: cameraX,          // Frame coordinates sent to API (may need X flip)
-      y: cameraY,          // Frame coordinates sent to API
-      displayX: clickX,    // Display coordinates (keep original click position)
-      displayY: clickY,    // Display coordinates (keep original click position)
-      originalX: cameraX,  // Store original for reference
-      originalY: cameraY,  // Store original for reference
-      calculatedX: frameX, // Store calculated X before potential flip
-      calculatedY: frameY  // Store calculated Y
+      x: apiX,
+      y: apiY,
+      displayX: clickX,
+      displayY: clickY,
+      percentX: percentX,
+      percentY: percentY
     };
   }
 
+  // ==================== Temperature API ====================
+  
   /**
-   * Fetch temperature from API for given coordinates
-   * @param {number} x - X coordinate in video frame
-   * @param {number} y - Y coordinate in video frame
-   * @returns {Promise<Object|null>} Temperature data or null on error
+   * Fetch temperature for a camera at given coordinates
    */
-  async function fetchTemperature(x, y) {
+  async function fetchTemperature(cameraId, x, y) {
+    const url = `/api/cameras/${encodeURIComponent(cameraId)}/temperature?x=${x}&y=${y}`;
+    console.log(`[Temp] Fetching: ${url}`);
+    
     try {
-      console.log(`[API Call] Fetching temperature for coordinates: x=${x}, y=${y}`);
-      const response = await fetch(`/temperature?x=${x}&y=${y}`);
+      const response = await fetch(url);
+      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[API Call] HTTP error ${response.status}:`, errorText);
-        throw new Error(`Failed to fetch temperature: ${response.status}`);
+        console.error(`[Temp] HTTP ${response.status}: ${errorText}`);
+        throw new Error(`HTTP ${response.status}`);
       }
+      
       const data = await response.json();
-      console.log('[API Call] Response received:', data);
+      console.log(`[Temp] Camera ${cameraId}: ${data.temperature}°C at (${x}, ${y})`);
       return data;
     } catch (error) {
-      console.error('[API Call] Temperature fetch error:', error);
+      console.error(`[Temp] Error for camera ${cameraId}:`, error);
       return null;
     }
   }
 
+  // ==================== UI Updates ====================
+  
   /**
-   * Update the temperature display overlay
-   * @param {Object} coords - Coordinates object with displayX and displayY
-   * @param {Object} tempData - Temperature data from API
+   * Update temperature overlay for a camera
    */
-  function updateTemperatureDisplay(coords, tempData) {
-    if (!tempData) {
-      thermalTemp.textContent = 'Error';
-      return;
+  function updateTempOverlay(container, coords, tempData) {
+    const overlay = container.querySelector('.thermal-overlay');
+    const crosshair = container.querySelector('.thermal-crosshair');
+    const tempDisplay = container.querySelector('.thermal-temp');
+
+    if (!overlay || !crosshair || !tempDisplay) return;
+
+    if (tempData && tempData.temperature !== undefined) {
+      tempDisplay.textContent = `${tempData.temperature} °C`;
+    } else {
+      tempDisplay.textContent = 'Error';
     }
 
-    thermalTemp.textContent = `${tempData.temperature} °C`;
-    thermalCrosshair.style.left = coords.displayX + 'px';
-    thermalCrosshair.style.top = coords.displayY + 'px';
-    thermalTemp.style.left = coords.displayX + 'px';
-    thermalTemp.style.top = coords.displayY + 'px';
-    thermalOverlay.style.display = 'block';
+    crosshair.style.left = coords.displayX + 'px';
+    crosshair.style.top = coords.displayY + 'px';
+    tempDisplay.style.left = coords.displayX + 'px';
+    tempDisplay.style.top = coords.displayY + 'px';
+    overlay.style.display = 'block';
   }
 
   /**
-   * Recalculate display coordinates from frame coordinates
-   * Used for window resize - keeps overlay at correct position
-   * @param {Object} point - Point object with x, y frame coordinates
-   * @returns {Object} Updated point with displayX and displayY
+   * Refresh temperature at selected point for a camera
    */
-  function recalculateDisplayCoords(point) {
-    const imgRect = thermalImg.getBoundingClientRect();
-    const naturalWidth = thermalImg.naturalWidth || imgRect.width;
-    const naturalHeight = thermalImg.naturalHeight || imgRect.height;
+  async function refreshTemperature(cameraId) {
+    const state = getCameraState(cameraId);
+    if (!state.selectedPoint) return;
 
-    if (naturalWidth > 0 && naturalHeight > 0) {
-      const scaleX = imgRect.width / naturalWidth;
-      const scaleY = imgRect.height / naturalHeight;
-      // Use original coordinates if available, otherwise use current x/y
-      const frameX = point.originalX !== undefined ? point.originalX : point.x;
-      const frameY = point.originalY !== undefined ? point.originalY : point.y;
-      point.displayX = frameX * scaleX;
-      point.displayY = frameY * scaleY;
-    }
-    return point;
-  }
-
-  /**
-   * Refresh temperature at the currently selected point
-   * Uses original clicked coordinates, not camera's confirmed coordinates
-   */
-  async function refreshTemperature() {
-    if (!selectedPoint) return;
-
-    // Always use the original clicked coordinates, not camera's response
-    const originalX = selectedPoint.originalX !== undefined ? selectedPoint.originalX : selectedPoint.x;
-    const originalY = selectedPoint.originalY !== undefined ? selectedPoint.originalY : selectedPoint.y;
-
-    console.log(`[Refresh] Using original coordinates: x=${originalX}, y=${originalY}`);
+    const tempData = await fetchTemperature(cameraId, state.selectedPoint.x, state.selectedPoint.y);
     
-    const tempData = await fetchTemperature(originalX, originalY);
-    if (tempData) {
-      // Log if camera returns different coordinates
-      if (tempData.x !== originalX || tempData.y !== originalY) {
-        console.log(`[Refresh] Camera confirmed coords differ: requested (${originalX}, ${originalY}), got (${tempData.x}, ${tempData.y})`);
-      }
-      
-      // Keep using original clicked coordinates for display
-      // Don't update selectedPoint.x/y to camera's response
-      updateTemperatureDisplay(selectedPoint, tempData);
+    const container = document.querySelector(`.thermal-container[data-camera-id="${cameraId}"]`);
+    if (container && tempData) {
+      updateTempOverlay(container, state.selectedPoint, tempData);
     }
   }
 
+  // ==================== Event Handlers ====================
+  
   /**
-   * Handle click on thermal image
+   * Handle click on thermal image or its container
    */
   async function handleThermalClick(event) {
-    const coords = getImageCoords(event);
-    if (!coords) {
-      console.warn('Image not loaded yet, please wait...');
+    // Find the thermal container - click might be on image or container
+    const container = event.target.closest('.thermal-container');
+    if (!container) {
+      console.error('[Click] Could not find thermal container');
+      return;
+    }
+    
+    // Get camera ID from container (more reliable than image)
+    const cameraId = container.dataset.cameraId;
+    if (!cameraId) {
+      console.error('[Click] No camera ID on thermal container');
+      return;
+    }
+    
+    // Get the thermal image for coordinate calculation
+    const thermalImg = container.querySelector('.thermal-img');
+    if (!thermalImg) {
+      console.error('[Click] No thermal image found in container');
       return;
     }
 
-    selectedPoint = coords;
+    console.log(`[Click] Camera: ${cameraId}`);
 
-    // Show loading state
-    thermalTemp.textContent = 'Loading...';
-    thermalCrosshair.style.left = coords.displayX + 'px';
-    thermalCrosshair.style.top = coords.displayY + 'px';
-    thermalTemp.style.left = coords.displayX + 'px';
-    thermalTemp.style.top = coords.displayY + 'px';
-    thermalOverlay.style.display = 'block';
+    const coords = getApiCoordinates(event, thermalImg);
+    if (!coords) return;
 
-    // Fetch initial temperature
-    const tempData = await fetchTemperature(coords.x, coords.y);
+    const state = getCameraState(cameraId);
+    state.selectedPoint = coords;
+
+    // Show loading
+    const tempDisplay = container.querySelector('.thermal-temp');
+    if (tempDisplay) tempDisplay.textContent = 'Loading...';
+    updateTempOverlay(container, coords, null);
+
+    // Fetch temperature
+    const tempData = await fetchTemperature(cameraId, coords.x, coords.y);
     if (tempData) {
-      // Log if camera returns different coordinates
-      if (tempData.x !== coords.x || tempData.y !== coords.y) {
-        console.log(`[Click] Camera confirmed coords differ: clicked (${coords.x}, ${coords.y}), camera returned (${tempData.x}, ${tempData.y})`);
+      updateTempOverlay(container, coords, tempData);
+    } else {
+      if (tempDisplay) tempDisplay.textContent = 'Error';
+    }
+
+    // Setup auto-refresh
+    if (state.refreshInterval) {
+      clearInterval(state.refreshInterval);
+    }
+    state.refreshInterval = setInterval(() => refreshTemperature(cameraId), 1000);
+  }
+
+  // ==================== Camera Management ====================
+  
+  /**
+   * Add a new camera via API
+   */
+  async function addCamera(formData) {
+    try {
+      const response = await fetch('/api/cameras', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to add camera');
       }
       
-      // Keep original clicked coordinates - don't update to camera's response
-      // The crosshair stays at the clicked location
-      updateTemperatureDisplay(coords, tempData);
-    }
-
-    // Clear existing interval and start auto-refresh every 1 second
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-    }
-    refreshInterval = setInterval(refreshTemperature, 1000); // Changed from 2000ms to 1000ms
-  }
-
-  /**
-   * Update overlay position on window resize
-   */
-  function handleResize() {
-    if (selectedPoint) {
-      const imgRect = thermalImg.getBoundingClientRect();
-      const naturalWidth = thermalImg.naturalWidth || imgRect.width;
-      const naturalHeight = thermalImg.naturalHeight || imgRect.height;
-
-      if (naturalWidth > 0 && naturalHeight > 0) {
-        recalculateDisplayCoords(selectedPoint);
-        thermalCrosshair.style.left = selectedPoint.displayX + 'px';
-        thermalCrosshair.style.top = selectedPoint.displayY + 'px';
-        thermalTemp.style.left = selectedPoint.displayX + 'px';
-        thermalTemp.style.top = selectedPoint.displayY + 'px';
-      }
+      return result;
+    } catch (error) {
+      console.error('[Camera] Add failed:', error);
+      throw error;
     }
   }
 
   /**
-   * Handle image load event to recalculate positions
+   * Remove a camera via API
+   * Exposed globally for onclick handlers
    */
-  function handleImageLoad() {
-    if (selectedPoint) {
-      const imgRect = thermalImg.getBoundingClientRect();
-      const naturalWidth = thermalImg.naturalWidth || imgRect.width;
-      const naturalHeight = thermalImg.naturalHeight || imgRect.height;
-
-      if (naturalWidth > 0 && naturalHeight > 0) {
-        console.log('[Image Load] Natural dimensions available:', { width: naturalWidth, height: naturalHeight });
-        recalculateDisplayCoords(selectedPoint);
-        thermalCrosshair.style.left = selectedPoint.displayX + 'px';
-        thermalCrosshair.style.top = selectedPoint.displayY + 'px';
-        thermalTemp.style.left = selectedPoint.displayX + 'px';
-        thermalTemp.style.top = selectedPoint.displayY + 'px';
-      }
-    }
-  }
-
-  /**
-   * Initialize temperature measurement at origin (0,0)
-   * Called when the image loads to automatically start measuring at origin
-   * NOTE: If (0,0) appears at top-right, the camera may use flipped X coordinates
-   */
-  async function initializeOriginMeasurement() {
-    // Wait for image to be loaded with natural dimensions
-    if (thermalImg.naturalWidth === 0 || thermalImg.naturalHeight === 0) {
-      console.log('[Init] Waiting for image to load...');
-      return;
-    }
-
-    const imgRect = thermalImg.getBoundingClientRect();
-    if (imgRect.width === 0 || imgRect.height === 0) {
-      console.log('[Init] Image not yet displayed, waiting...');
-      return;
-    }
-
-    // Calculate display position for (0,0) coordinates
-    const naturalWidth = thermalImg.naturalWidth;
-    const naturalHeight = thermalImg.naturalHeight;
-    const scaleX = imgRect.width / naturalWidth;
-    const scaleY = imgRect.height / naturalHeight;
-
-    // If camera uses flipped X coordinates, (0,0) in camera space is at top-right
-    // To show marker at top-left (visual 0,0), we need to send (naturalWidth-1, 0) to camera
-    // But if flipXCoordinates is true, the transformation happens in getImageCoords
-    // So for display at top-left, we calculate what camera coordinate that would be
-    const testOriginX = flipXCoordinates ? (naturalWidth - 1) : 0;
-    const testOriginY = 0;
+  async function removeCameraById(cameraId) {
+    console.log(`[Camera] Attempting to remove: ${cameraId}`);
     
-    // Display coordinates for origin (0,0) - this should be top-left of displayed image
-    const displayX = 0;  // Top-left corner of displayed image
-    const displayY = 0;  // Top-left corner of displayed image
-
-    console.log('[Init] Testing origin coordinates:', {
-      naturalDimensions: { width: naturalWidth, height: naturalHeight },
-      testCoords: { x: testOriginX, y: testOriginY },
-      displayPos: { x: displayX, y: displayY },
-      flipXEnabled: flipXCoordinates
-    });
-
-    // Create coordinate object for origin
-    const originCoords = {
-      x: testOriginX,
-      y: testOriginY,
-      displayX: displayX,
-      displayY: displayY,
-      originalX: testOriginX,
-      originalY: testOriginY,
-      calculatedX: testOriginX,
-      calculatedY: testOriginY
-    };
-
-    console.log('[Init] Initializing temperature measurement at origin (0,0)');
-    console.log('[Init] Display position:', { displayX, displayY, scaleX, scaleY });
-
-    // Set as selected point
-    selectedPoint = originCoords;
-
-    // Show crosshair and loading state at origin
-    thermalTemp.textContent = 'Loading...';
-    thermalCrosshair.style.left = displayX + 'px';
-    thermalCrosshair.style.top = displayY + 'px';
-    thermalTemp.style.left = displayX + 'px';
-    thermalTemp.style.top = displayY + 'px';
-    thermalOverlay.style.display = 'block';
-
-    // Fetch initial temperature at origin
-    // If (0,0) appears at top-right, we may need to use (naturalWidth-1, 0) instead
-    const testX = testOriginX;
-    const testY = testOriginY;
-    
-    console.log('[Init] Fetching temperature at:', { x: testX, y: testY, naturalWidth });
-    const tempData = await fetchTemperature(testX, testY);
-    if (tempData) {
-      console.log('[Init] Temperature at origin:', tempData);
-      console.log('[Init] If marker appears at top-right, camera may use flipped X coordinates');
-      console.log('[Init] Try clicking top-left corner to see what coordinates it reports');
-      updateTemperatureDisplay(originCoords, tempData);
-    } else {
-      thermalTemp.textContent = 'Error';
-    }
-
-    // Start auto-refresh interval
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-    }
-    refreshInterval = setInterval(refreshTemperature, 1000);
-  }
-
-  // Event Listeners
-  if (thermalImg) {
-    thermalImg.addEventListener('click', handleThermalClick);
-    thermalImg.addEventListener('load', function() {
-      handleImageLoad();
-      // Initialize origin measurement when image loads
-      // Use a small delay to ensure dimensions are fully available
-      setTimeout(initializeOriginMeasurement, 500);
-    });
-  }
-
-  // Also try to initialize if image is already loaded
-  if (thermalImg && thermalImg.complete && thermalImg.naturalWidth > 0) {
-    setTimeout(initializeOriginMeasurement, 500);
-  }
-
-  // Debounced resize handler
-  let resizeTimeout;
-  window.addEventListener('resize', function() {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(handleResize, 100);
-  });
-
-  /**
-   * Poll the RGM center temperature endpoint and update badge
-   */
-  async function pollRgmCenterTemperature() {
-    if (!rgmAvailable || !rgmTemp) {
+    if (!cameraId) {
+      console.error('[Camera] No camera ID provided');
+      alert('Error: No camera ID');
       return;
     }
-
+    
+    if (!confirm('Remove this camera?')) return;
+    
     try {
-      const response = await fetch('/rgm/center_temperature', { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      if (typeof data.temp_c === 'number') {
-        const valueC = data.temp_c.toFixed(2);
-        const valueF = typeof data.temp_f === 'number' ? data.temp_f.toFixed(2) : null;
-        rgmTemp.textContent = valueF
-          ? `Center: ${valueC} °C (${valueF} °F)`
-          : `Center: ${valueC} °C`;
-        rgmTemp.classList.remove('muted');
+      const response = await fetch(`/api/cameras/${encodeURIComponent(cameraId)}`, {
+        method: 'DELETE'
+      });
+      
+      console.log(`[Camera] Delete response status: ${response.status}`);
+      
+      if (response.ok) {
+        // Remove from DOM
+        const row = document.querySelector(`.camera-row[data-camera-id="${cameraId}"]`);
+        if (row) {
+          row.remove();
+          console.log(`[Camera] Removed row from DOM`);
+        } else {
+          console.warn(`[Camera] Could not find row in DOM for: ${cameraId}`);
+        }
+        
+        // Clean up state
+        if (cameraStates.has(cameraId)) {
+          const state = cameraStates.get(cameraId);
+          if (state.refreshInterval) {
+            clearInterval(state.refreshInterval);
+          }
+          cameraStates.delete(cameraId);
+        }
+        
+        // Show RGM-only row if no cameras left
+        checkNoCameras();
+        
+        console.log(`[Camera] Successfully removed: ${cameraId}`);
       } else {
-        rgmTemp.textContent = 'Center temperature unavailable';
-        rgmTemp.classList.add('muted');
+        let errorMsg = 'Failed to remove camera';
+        try {
+          const result = await response.json();
+          errorMsg = result.error || errorMsg;
+        } catch (e) {
+          // Response might not be JSON
+        }
+        console.error(`[Camera] Remove failed: ${errorMsg}`);
+        alert(errorMsg);
       }
     } catch (error) {
-      console.error('[RGM] Center temperature fetch failed:', error);
-      rgmTemp.textContent = 'Center temperature unavailable';
-      rgmTemp.classList.add('muted');
-    } finally {
-      rgmPollHandle = setTimeout(pollRgmCenterTemperature, rgmPollIntervalMs);
+      console.error('[Camera] Remove request failed:', error);
+      alert('Failed to remove camera: ' + error.message);
     }
   }
+  
+  // Expose to global scope for onclick handlers
+  window.removeCamera = removeCameraById;
 
-  if (rgmAvailable && rgmTemp) {
-    rgmTemp.textContent = 'Center: -- °C';
-    rgmTemp.classList.add('muted');
-    pollRgmCenterTemperature();
-  } else if (rgmTemp) {
-    rgmTemp.textContent = 'RGM camera unavailable';
-    rgmTemp.classList.add('muted');
+  /**
+   * Create camera row HTML with triple grid (RGB | Thermal | RGM)
+   */
+  function createCameraRow(camera) {
+    if (!camera || !camera.id) {
+      console.error('[CreateRow] Invalid camera data:', camera);
+      return null;
+    }
+    
+    const row = document.createElement('div');
+    row.className = 'camera-row';
+    row.dataset.cameraId = camera.id;
+    
+    // Escape values for safe HTML insertion
+    const safeId = escapeAttr(camera.id);
+    const safeName = escapeHtml(camera.name || 'Unnamed Camera');
+    const safeIp = escapeHtml(camera.ip_address || 'Unknown IP');
+    
+    const rgmContent = rgmAvailable 
+      ? `<img src="/video/rgm" alt="RGM Thermal Stream" />
+         <div class="rgm-temp-badge rgm-temp-display">Center: -- °C</div>`
+      : `<div class="stream-placeholder">
+           <p>RGM camera unavailable</p>
+         </div>`;
+    
+    row.innerHTML = `
+      <div class="camera-row-header">
+        <h2>${safeName}</h2>
+        <span class="camera-ip">${safeIp}</span>
+        <button class="btn-remove" data-remove-camera="${safeId}" title="Remove camera">✕</button>
+      </div>
+      <div class="triple-stream-grid">
+        <!-- GeoVision RGB -->
+        <section class="stream">
+          <h3>GeoVision RGB</h3>
+          <img src="/video/${encodeURIComponent(camera.id)}/rgb" alt="RGB Stream" />
+        </section>
+        <!-- GeoVision Thermal -->
+        <section class="stream">
+          <h3>GeoVision Thermal <span class="stream-hint">(Click to measure)</span></h3>
+          <div class="stream-container thermal-container" data-camera-id="${safeId}">
+            <img class="thermal-img clickable" 
+                 data-camera-id="${safeId}" 
+                 src="/video/${encodeURIComponent(camera.id)}/thermal" 
+                 alt="Thermal Stream" />
+            <div class="thermal-overlay">
+              <div class="thermal-crosshair"></div>
+              <div class="thermal-temp"></div>
+            </div>
+          </div>
+        </section>
+        <!-- RGM Thermal -->
+        <section class="stream rgm-stream">
+          <h3>RGM Thermal <span class="stream-hint">(Center temp)</span></h3>
+          <div class="stream-container rgm-container">
+            ${rgmContent}
+          </div>
+        </section>
+      </div>
+    `;
+    
+    // Add click handler for thermal image
+    const thermalImg = row.querySelector('.thermal-img');
+    if (thermalImg) {
+      thermalImg.addEventListener('click', handleThermalClick);
+      console.log(`[CreateRow] Attached click handler for camera: ${camera.id}`);
+    }
+    
+    return row;
   }
 
   /**
-   * Update GeoVision status badge text + color
-   * @param {string} text 
-   * @param {'muted'|'success'|'error'} state 
+   * Check if we need to show "RGM only" row when no cameras exist
    */
-  function setGeoVisionStatus(text, state = 'muted') {
-    if (!geovisionStatus) return;
-    geovisionStatus.textContent = text;
-    geovisionStatus.classList.remove('muted', 'success', 'error');
-    geovisionStatus.classList.add(state);
+  function checkNoCameras() {
+    const container = document.getElementById('cameras-container');
+    const cameraRows = container.querySelectorAll('.camera-row:not(.rgm-only-row)');
+    let rgmOnlyRow = document.getElementById('rgm-only-row');
+    
+    if (cameraRows.length === 0) {
+      // No cameras - show RGM only row
+      if (!rgmOnlyRow) {
+        const rgmContent = rgmAvailable 
+          ? `<img src="/video/rgm" alt="RGM Thermal Stream" />
+             <div class="rgm-temp-badge rgm-temp-display">Center: -- °C</div>`
+          : `<div class="stream-placeholder">
+               <p>RGM camera unavailable</p>
+               <p class="hint">Add a GeoVision camera above to start monitoring</p>
+             </div>`;
+        
+        rgmOnlyRow = document.createElement('div');
+        rgmOnlyRow.className = 'camera-row rgm-only-row';
+        rgmOnlyRow.id = 'rgm-only-row';
+        rgmOnlyRow.innerHTML = `
+          <div class="camera-row-header">
+            <h2>RGM Local Thermal</h2>
+            <span class="camera-ip">USB Connected</span>
+          </div>
+          <div class="single-stream-grid">
+            <section class="stream rgm-stream">
+              <h3>RGM Thermal <span class="stream-hint">(Center temperature)</span></h3>
+              <div class="stream-container rgm-container">
+                ${rgmContent}
+              </div>
+            </section>
+          </div>
+        `;
+        container.appendChild(rgmOnlyRow);
+      }
+    } else if (rgmOnlyRow) {
+      // Have cameras - remove RGM only row
+      rgmOnlyRow.remove();
+    }
   }
 
-  if (geovisionForm && geovisionStatus) {
-    const passwordInput = geovisionForm.querySelector('#gv-password');
-    const submitButton = geovisionForm.querySelector('button[type="submit"]');
+  /**
+   * Escape HTML to prevent XSS
+   */
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+  }
+  
+  /**
+   * Escape for HTML attribute values (more strict than escapeHtml)
+   */
+  function escapeAttr(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
 
-    geovisionForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const formData = new FormData(geovisionForm);
-      const payload = {
-        ip: (formData.get('ip') || '').trim(),
-        username: (formData.get('username') || '').trim(),
-        password: formData.get('password') || ''
-      };
+  // ==================== RGM Temperature Polling ====================
+  
+  let rgmPollHandle = null;
+  
+  /**
+   * Update ALL RGM temperature displays (one in each camera row)
+   */
+  async function pollRgmTemperature() {
+    if (!rgmAvailable) return;
 
-      if (!payload.ip || !payload.username) {
-        setGeoVisionStatus('IP and username required', 'error');
-        return;
-      }
-
-      setGeoVisionStatus('Applying...', 'muted');
-      if (submitButton) {
-        submitButton.disabled = true;
-      }
-
-      try {
-        const response = await fetch('/configure/geovision', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (!response.ok || result.status !== 'ok') {
-          throw new Error(result.message || 'Failed to update');
+    try {
+      const response = await fetch('/rgm/center_temperature');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const data = await response.json();
+      
+      // Update ALL RGM temperature displays
+      const rgmDisplays = document.querySelectorAll('.rgm-temp-display');
+      
+      rgmDisplays.forEach(display => {
+        if (typeof data.temp_c === 'number') {
+          const valueC = data.temp_c.toFixed(2);
+          const valueF = typeof data.temp_f === 'number' ? data.temp_f.toFixed(2) : null;
+          display.textContent = valueF
+            ? `Center: ${valueC} °C (${valueF} °F)`
+            : `Center: ${valueC} °C`;
+          display.classList.remove('muted');
+        } else {
+          display.textContent = 'Center: -- °C';
+          display.classList.add('muted');
         }
-        setGeoVisionStatus('Streams restarting with new settings', 'success');
-        refreshGeoVisionStreams();
-        if (passwordInput) {
-          passwordInput.value = '';
+      });
+    } catch (error) {
+      console.error('[RGM] Poll error:', error);
+      document.querySelectorAll('.rgm-temp-display').forEach(display => {
+        display.textContent = 'Center: -- °C';
+        display.classList.add('muted');
+      });
+    }
+    
+    rgmPollHandle = setTimeout(pollRgmTemperature, 1000);
+  }
+
+  // ==================== Initialization ====================
+  
+  function init() {
+    console.log('[Init] Multi-camera viewer starting...');
+    
+    // Setup add camera form
+    const addForm = document.getElementById('add-camera-form');
+    const addStatus = document.getElementById('add-camera-status');
+    
+    if (addForm) {
+      addForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        
+        const formData = {
+          name: addForm.querySelector('[name="name"]').value.trim(),
+          ip_address: addForm.querySelector('[name="ip_address"]').value.trim(),
+          username: addForm.querySelector('[name="username"]').value.trim(),
+          password: addForm.querySelector('[name="password"]').value
+        };
+        
+        addStatus.textContent = 'Adding camera...';
+        addStatus.className = 'config-status muted';
+        
+        try {
+          const result = await addCamera(formData);
+          
+          if (!result || !result.camera) {
+            throw new Error('Invalid response from server');
+          }
+          
+          // Remove RGM-only row if present
+          const rgmOnlyRow = document.getElementById('rgm-only-row');
+          if (rgmOnlyRow) rgmOnlyRow.remove();
+          
+          // Add camera row to DOM
+          const container = document.getElementById('cameras-container');
+          const row = createCameraRow(result.camera);
+          
+          if (row) {
+            container.appendChild(row);
+          } else {
+            throw new Error('Failed to create camera row');
+          }
+          
+          // Clear form
+          addForm.reset();
+          addForm.querySelector('[name="username"]').value = 'admin';
+          
+          addStatus.textContent = `Added: ${result.camera.name || 'Camera'}`;
+          addStatus.className = 'config-status success';
+          
+          setTimeout(() => {
+            addStatus.textContent = '';
+          }, 3000);
+          
+        } catch (error) {
+          addStatus.textContent = error.message || 'Failed to add camera';
+          addStatus.className = 'config-status error';
         }
-      } catch (error) {
-        console.error('[GeoVision Config] Update failed:', error);
-        setGeoVisionStatus(error.message || 'Update failed', 'error');
-      } finally {
-        if (submitButton) {
-          submitButton.disabled = false;
-        }
+      });
+    }
+    
+    // Setup existing thermal image click handlers
+    // Attach to container for more reliable click detection
+    document.querySelectorAll('.thermal-container[data-camera-id]').forEach(container => {
+      const img = container.querySelector('.thermal-img');
+      if (img) {
+        img.addEventListener('click', handleThermalClick);
+        console.log(`[Init] Attached click handler for camera: ${container.dataset.cameraId}`);
       }
     });
+    
+    // Setup event delegation for remove buttons (more reliable than inline onclick)
+    document.addEventListener('click', function(event) {
+      const removeBtn = event.target.closest('[data-remove-camera]');
+      if (removeBtn) {
+        const cameraId = removeBtn.dataset.removeCamera;
+        console.log(`[Click] Remove button clicked for camera: ${cameraId}`);
+        removeCameraById(cameraId);
+      }
+    });
+    
+    // Start RGM polling if available
+    if (rgmAvailable) {
+      pollRgmTemperature();
+    }
+    
+    console.log('[Init] Ready');
   }
-  /**
-   * Force RGB and thermal streams to reconnect by busting cache.
-   */
-  function refreshGeoVisionStreams() {
-    const timestamp = Date.now();
-    if (rgbImg) {
-      rgbImg.src = `/video/rgb?ts=${timestamp}`;
-    }
-    if (thermalImg) {
-      thermalImg.src = `/video/thermal?ts=${timestamp + 1}`;
-    }
 
-    // Reset overlay state so the user clicks again with new feed.
-    selectedPoint = null;
-    if (thermalOverlay) {
-      thermalOverlay.style.display = 'none';
-    }
+  // Start when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
+
 })();
-

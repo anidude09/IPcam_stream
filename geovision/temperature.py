@@ -43,10 +43,21 @@ class TemperatureClient:
         """
         Get temperature at specific pixel coordinates.
         According to API docs: POST http://<host>[:port]/GetDotTemperature[/channelId]
+        
+        Args:
+            x: X coordinate (0-10000 normalized)
+            y: Y coordinate (0-10000 normalized)
+            
+        Returns:
+            Tuple of (temperature_celsius, x_coord, y_coord) or None on error
         """
+        # Validate coordinates
+        if x < 0 or y < 0:
+            print(f"[TemperatureClient] Invalid coordinates: ({x}, {y}) - must be non-negative")
+            return None
+            
         url = self._url("GetDotTemperature")
         # Match exact XML structure from documentation
-        # version="" is optional per docs, but we'll include a version for compatibility
         payload = f"""<?xml version="1.0" encoding="UTF-8"?>
 <config version="1.0" xmlns="http://www.ipc.com/ver10">
     <dotTemperature>
@@ -56,8 +67,7 @@ class TemperatureClient:
 </config>"""
         headers = {"Content-Type": "application/xml"}
         try:
-            print(f"[TemperatureClient] Requesting temperature at ({x}, {y}) from {url}")
-            print(f"[TemperatureClient] Request payload:\n{payload}")
+            print(f"[TemperatureClient] Requesting temperature at ({x}, {y})")
             response = requests.post(
                 url,
                 data=payload,
@@ -66,13 +76,18 @@ class TemperatureClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            print(f"[TemperatureClient] Response status: {response.status_code}")
-            print(f"[TemperatureClient] Response body:\n{response.text}")  # Full response for debugging
+            print(f"[TemperatureClient] Response received (status: {response.status_code})")
             return _parse_dot_response(response.text, self.temp_conversion_factor, self.temp_offset)
+        except requests.Timeout:
+            print(f"[TemperatureClient] Request timed out after {self.timeout}s")
+            return None
+        except requests.ConnectionError as exc:
+            print(f"[TemperatureClient] Connection error: {exc}")
+            return None
         except requests.RequestException as exc:
             print(f"[TemperatureClient] Request error: {exc}")
             if hasattr(exc, 'response') and exc.response is not None:
-                print(f"[TemperatureClient] Error response: {exc.response.text}")
+                print(f"[TemperatureClient] Error response: {exc.response.text[:500]}")  # Limit response length
             return None
 
 
@@ -117,14 +132,17 @@ def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_of
     - <hotX> (confirmed X coordinate)
     - <hotY> (confirmed Y coordinate)
     """
+    if not xml_text or not xml_text.strip():
+        print("[Parse Error] Empty XML response")
+        return None
+        
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
-        print(f"[Parse Error] Dot XML parse error: {exc}\nResponse: {xml_text}")
+        print(f"[Parse Error] XML parse error: {exc}")
         return None
 
     # Try to find nodes - they might be directly under root or in dotTemperature
-    # First try finding in dotTemperature element
     dot_temp_elem = root.find(".//{*}dotTemperature")
     if dot_temp_elem is not None:
         temperature_node = dot_temp_elem.find(".//{*}temperature")
@@ -136,25 +154,20 @@ def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_of
         x_node = root.find(".//{*}hotX")
         y_node = root.find(".//{*}hotY")
     
-    # Debug: print all nodes found
-    print(f"[Parse Debug] Found nodes - temp: {temperature_node is not None}, hotX: {x_node is not None}, hotY: {y_node is not None}")
-    if temperature_node is not None:
-        print(f"[Parse Debug] temperature node text: {temperature_node.text}")
-    if x_node is not None:
-        print(f"[Parse Debug] hotX node text: {x_node.text}")
-    if y_node is not None:
-        print(f"[Parse Debug] hotY node text: {y_node.text}")
-    
+    # Check for missing nodes
+    missing = []
     if temperature_node is None:
-        print(f"[Parse Error] Could not find temperature node in XML")
-        print(f"[Parse Error] Available nodes: {[elem.tag for elem in root.iter()]}")
+        missing.append("temperature")
     if x_node is None:
-        print(f"[Parse Error] Could not find hotX node in XML")
+        missing.append("hotX")
     if y_node is None:
-        print(f"[Parse Error] Could not find hotY node in XML")
+        missing.append("hotY")
     
-    if not all([temperature_node is not None, x_node is not None, y_node is not None]):
-        print(f"[Parse Error] Missing required nodes. Full XML:\n{xml_text}")
+    if missing:
+        print(f"[Parse Error] Missing nodes: {', '.join(missing)}")
+        # List available nodes for debugging
+        available = [elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag for elem in root.iter()]
+        print(f"[Parse Error] Available nodes: {available[:20]}")  # Limit to first 20
         return None
 
     try:
@@ -162,32 +175,22 @@ def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_of
         x_raw = x_node.text
         y_raw = y_node.text
         
+        if temp_raw is None or x_raw is None or y_raw is None:
+            print(f"[Parse Error] Node text is None: temp={temp_raw}, x={x_raw}, y={y_raw}")
+            return None
+        
         temp_raw_int = int(temp_raw)
         
-        # Temperature conversion using configured factor
-        # Documentation suggests hundredths (e.g., 2835 = 28.35°C)
-        # But let's also check if it might be in tenths or already in Celsius
-        temp_hundredths = float(temp_raw_int) / 100.0
-        temp_tenths = float(temp_raw_int) / 10.0
-        temp_direct = float(temp_raw_int)
-        
-        print(f"[Parse Success] Raw values: temp_raw={temp_raw} (int={temp_raw_int}), x_raw={x_raw}, y_raw={y_raw}")
-        print(f"[Parse Success] Conversion options:")
-        print(f"  - Divided by 100: {temp_hundredths:.2f}°C")
-        print(f"  - Divided by 10:  {temp_tenths:.2f}°C")
-        print(f"  - Direct value:   {temp_direct:.2f}°C")
-        
-        # Use configured conversion factor
+        # Use configured conversion factor (default: divide by 100 for hundredths)
         temp = (float(temp_raw_int) / conversion_factor) + temp_offset
         x_val = int(x_raw)
         y_val = int(y_raw)
         
-        print(f"[Parse Success] Using: temp={temp:.2f}°C (raw={temp_raw_int}, factor={conversion_factor}, offset={temp_offset}), x={x_val}, y={y_val}")
+        print(f"[Parse] Temperature: {temp:.2f}°C (raw={temp_raw_int}) at ({x_val}, {y_val})")
         
         return temp, x_val, y_val
     except (TypeError, ValueError) as e:
         print(f"[Parse Error] Value conversion error: {e}")
-        print(f"[Parse Error] Values: temp={temperature_node.text if temperature_node is not None else 'None'}, x={x_node.text if x_node is not None else 'None'}, y={y_node.text if y_node is not None else 'None'}")
         return None
 
 

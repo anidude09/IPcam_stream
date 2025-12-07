@@ -1,199 +1,207 @@
-# GeoVision IP Camera Stream Viewer
+# GeoVision Multi-Camera Stream Viewer
 
-A Flask-based web application for monitoring GeoVision RGB/thermal IP cameras alongside local RGM thermal sensors with real-time temperature measurement capabilities.
+A Flask-based web application for monitoring **multiple GeoVision IP cameras** (RGB + thermal) alongside a local RGM thermal sensor, with real-time temperature measurement.
 
 ## Features
 
-- **Dual GeoVision Streams**: RGB and thermal video feeds from IP cameras
-- **Local RGM Thermal Camera**: USB-connected thermal imaging with center temperature display
+- **Multi-Camera Support**: Add, remove, and manage multiple GeoVision cameras
+- **Dual Streams per Camera**: RGB and thermal video feeds from each IP camera
 - **Interactive Temperature Measurement**: Click anywhere on thermal streams to measure temperature
 - **Real-time MJPEG Streaming**: Low-latency video feeds in web browser
-- **Dynamic Configuration**: Update camera settings through web interface
+- **Dynamic Configuration**: Add/remove cameras through web interface without restart
+- **Local RGM Thermal Camera**: USB-connected thermal imaging with center temperature display
 - **Automatic Reconnection**: Handles network interruptions gracefully
 
-## Hardware Requirements
+## Quick Start
 
-### GeoVision IP Camera
-- GeoVision IP camera with dual streams (RGB + thermal)
-- Network connectivity (Ethernet/WiFi)
-- RTSP streaming enabled
-- HTTP API access for temperature measurements
-
-### RGM Thermal Camera
-- USB-connected thermal camera (typically device index 0)
-- Compatible with Windows DirectShow or MSMF backends
-- Raw thermal data output capability
-
-### System Requirements
-- Windows 10/11 laptop or desktop
-- USB ports for RGM camera connection
-- Network access to GeoVision camera
-- Python 3.8+ (included in setup)
-
-## Installation & Setup
-
-### 1. Clone/Download the Project
+### 1. Setup Environment
 ```powershell
-# Create project directory
-mkdir IPcam_stream
-cd IPcam_stream
-# Copy all project files here
-```
-
-### 2. Set Up Python Virtual Environment
-```powershell
-# Create virtual environment
+cd C:\Users\aniruddh\IPcam_stream
 python -m venv .venv
-
-# Activate virtual environment
 .\.venv\Scripts\Activate.ps1
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Configure Camera Settings (Optional)
-Set environment variables before starting, or configure via web interface:
-
-```powershell
-# GeoVision Camera Settings
-$env:GEOVISION_IP="192.168.1.100"      # Your camera's IP address
-$env:GEOVISION_USER="admin"            # Camera username
-$env:GEOVISION_PASS="your_password"    # Camera password
-
-# RGM Camera Settings (optional)
-$env:RGM_DEVICE_INDEX="0"              # USB camera device index
-$env:RGM_USE_MSMF="false"              # Use MSMF backend (true/false)
-$env:RGM_VIEW_SCALE="3"                # Display scaling factor
-$env:RGM_TEMP_MIN_C="20.0"             # Min temperature for color scale
-$env:RGM_TEMP_MAX_C="40.0"             # Max temperature for color scale
-```
-
-### 4. Start the Application
+### 2. Run the Application
 ```powershell
 python app.py
 ```
 
-### 5. Access the Web Interface
-Open your browser and navigate to: **http://localhost:8000**
+### 3. Open Browser
+Navigate to: **http://localhost:8000**
 
-## Usage Guide
+### 4. Add Cameras
+Use the "Add GeoVision Camera" form to add cameras:
+- Enter a **name** (e.g., "Front Entrance")
+- Enter the camera's **IP address**
+- Enter **username** and **password**
+- Click "Add Camera"
 
-### Web Interface Overview
-- **GeoVision RGB**: Live RGB video feed
-- **GeoVision Thermal**: Thermal imaging with click-to-measure temperature
-- **RGM Thermal**: Local USB thermal camera with center temperature display
+You can add multiple cameras - each will display its RGB and thermal streams.
 
-### Temperature Measurement
-1. Click anywhere on the GeoVision thermal stream
-2. A green crosshair appears at the clicked location
-3. Temperature reading updates in real-time
-4. Measurements refresh automatically every second
+## Optional: Pre-configure Default Camera
 
-### Camera Configuration
-- Use the "GeoVision Camera Settings" form to update IP address, username, and password
-- Changes take effect immediately and streams restart automatically
-- RGM settings require environment variable changes and application restart
+Set environment variables before starting to auto-add a camera:
+```powershell
+$env:GEOVISION_IP="192.168.1.100"
+$env:GEOVISION_USER="admin"
+$env:GEOVISION_PASS="your_password"
+$env:GEOVISION_NAME="Main Camera"
 
-## Network & Firewall Configuration
+python app.py
+```
 
-### Required Network Access
-- **RTSP Port 554**: For video streaming from GeoVision camera
-- **HTTP Port 80**: For temperature API calls to GeoVision camera
-- **Local Port 8000**: Web application (automatically opened)
+## API Reference
 
-### Windows Firewall
-The application will prompt for firewall access when first started. Allow access for:
-- Python executable
-- Application network communications
+### Camera Management
 
-### Camera Network Setup
-Ensure your GeoVision camera:
-- Is on the same network as your laptop
-- Has RTSP streaming enabled
-- Has HTTP API access enabled
-- Firewall allows connections from your laptop's IP
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/cameras` | GET | List all cameras |
+| `/api/cameras` | POST | Add a new camera |
+| `/api/cameras/<id>` | PUT | Update camera settings |
+| `/api/cameras/<id>` | DELETE | Remove a camera |
+
+### Video Streams
+
+| Endpoint | Description |
+|----------|-------------|
+| `/video/<camera_id>/rgb` | RGB video stream |
+| `/video/<camera_id>/thermal` | Thermal video stream |
+| `/video/rgm` | RGM local thermal stream |
+
+### Temperature
+
+| Endpoint | Description |
+|----------|-------------|
+| `/api/cameras/<id>/temperature?x=<x>&y=<y>` | Get temperature at coordinates |
+| `/rgm/center_temperature` | Get RGM center temperature |
+
+## Temperature Measurement
+
+### How It Works
+1. Click anywhere on a thermal stream
+2. Coordinates are converted to GeoVision API format (0-10000 normalized)
+3. Temperature is fetched from the camera's API
+4. Reading updates automatically every second
+
+### GeoVision API Coordinate System
+The GeoVision temperature API uses **normalized coordinates (0-10000)**:
+- `(0, 0)` = Top-left corner
+- `(10000, 10000)` = Bottom-right corner
+- `(5000, 5000)` = Center
 
 ## Troubleshooting
 
-### GeoVision Camera Connection Issues
-```powershell
-# Test basic connectivity
-ping YOUR_CAMERA_IP
+### Camera Won't Connect
+- Verify IP address is correct and camera is on same network
+- Check username/password credentials
+- Ensure RTSP streaming is enabled on camera
+- Check firewall settings
 
-# Verify RTSP stream URL format
-# Should be: rtsp://username:password@ip_address:554/profile1
-```
-
-**Common Solutions:**
-- Check camera IP address and network connectivity
-- Verify username/password credentials
-- Ensure RTSP is enabled in camera settings
-- Check firewall settings on both camera and laptop
+### Temperature Readings Incorrect
+- The application now uses normalized coordinates (0-10000)
+- Check browser console (F12) for coordinate debug info
+- Verify camera's thermal API is functioning
 
 ### RGM Camera Not Detected
 ```powershell
-# List available camera devices (run in Python)
-import cv2
-for i in range(10):
-    cap = cv2.VideoCapture(i)
-    if cap.isOpened():
-        print(f"Camera found at index {i}")
-    cap.release()
+# Try different device index
+$env:RGM_DEVICE_INDEX="1"
+
+# Or try MSMF backend
+$env:RGM_USE_MSMF="true"
 ```
-
-**Common Solutions:**
-- Try different device indices (0, 1, 2, etc.)
-- Switch between DirectShow and MSMF backends
-- Ensure USB cable is properly connected
-- Check device manager for camera driver issues
-
-### Application Won't Start
-- Ensure virtual environment is activated
-- Verify all dependencies are installed: `pip list`
-- Check Python version: `python --version` (requires 3.8+)
-- Look for error messages in console output
-
-### Performance Issues
-- Close other camera applications
-- Reduce RGM_VIEW_SCALE for better performance
-- Ensure stable network connection to GeoVision camera
-- Check CPU usage - thermal processing is CPU intensive
 
 ## Configuration Reference
 
-### GeoVision Camera Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GEOVISION_IP` | `192.168.0.10` | Camera IP address |
-| `GEOVISION_USER` | `admin` | Camera username |
-| `GEOVISION_PASS` | `admin123` | Camera password |
-| `GEOVISION_RGB_PROFILE` | `profile1` | RGB stream profile ID |
-| `GEOVISION_THERMAL_PROFILE` | `profile4` | Thermal stream profile ID |
+### Environment Variables
 
-### RGM Camera Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `GEOVISION_IP` | - | Default camera IP (optional) |
+| `GEOVISION_USER` | `admin` | Default camera username |
+| `GEOVISION_PASS` | `admin123` | Default camera password |
+| `GEOVISION_NAME` | `GeoVision Camera` | Default camera display name |
 | `RGM_DEVICE_INDEX` | `0` | USB camera device index |
 | `RGM_USE_MSMF` | `false` | Use MSMF instead of DirectShow |
 | `RGM_VIEW_SCALE` | `3` | Display scaling factor |
-| `RGM_TEMP_MIN_C` | `20.0` | Minimum temperature (°C) |
-| `RGM_TEMP_MAX_C` | `40.0` | Maximum temperature (°C) |
+| `RGM_TEMP_MIN_C` | `20.0` | Min temperature for color scale |
+| `RGM_TEMP_MAX_C` | `40.0` | Max temperature for color scale |
+
+## Project Structure
+
+```
+IPcam_stream/
+├── app.py                      # Main Flask application
+├── geovision/
+│   ├── camera_manager.py       # Multi-camera management
+│   ├── config.py               # Camera configuration
+│   ├── streams.py              # RTSP streaming
+│   ├── temperature.py          # Temperature API
+│   └── overlay.py              # Drawing utilities
+├── rgm/
+│   ├── io.py                   # Camera I/O
+│   ├── processing.py           # Thermal processing
+│   └── streaming.py            # MJPEG streaming
+├── static/
+│   ├── css/style.css           # Styles
+│   └── js/main.js              # Frontend logic
+├── templates/
+│   └── index.html              # Main page
+├── requirements.txt            # Dependencies
+└── README.md                   # This file
+```
+
+
+
+
+## Proposed Architecutre 
+┌─────────────────┐     Serial      ┌──────────────────┐
+│  AWR300 RFID    │ ─────────────▶ │  RFID Listener    |
+│  Stick Reader   │                 │  (Background)    │
+└─────────────────┘                 └────────┬─────────┘
+                                             │
+                                    Tag Scanned Event
+                                             │
+                                             ▼
+┌────────────────────────────────────────────────────────────────┐
+│                    Capture Manager                             │
+│  1. Grab frame from GeoVision RGB stream                       │
+│  2. Grab frame from GeoVision Thermal stream                   │
+│  3. Grab frame from RGM stream                                 │
+│  4. (Optional) Get temperature reading at center               │
+│  5. Save frames to disk as JPEG files                          │
+│  6. Log metadata + file paths to CSV                           │
+└────────────────────────────────────────────────────────────────┘
+                                             │
+                                             ▼
+┌────────────────────────────────────────────────────────────────┐
+│  Storage Structure                                             │
+│                                                                │
+│  captures/                                                     │
+│    ├── 2024-12-07_143045_982000123456789/                      │
+│    │   ├── geovision_rgb.jpg                                   │
+│    │   ├── geovision_thermal.jpg                               │
+│    │   └── rgm_thermal.jpg                                     │
+│    └── ...                                                     │
+│                                                                │
+│  cattle_captures.csv                                           │
+│    ┌─────────────┬────────────┬────────┬──────────┬─────────┐  │
+│    │ eid         │ timestamp  │ date   │ time     │ group   │  │
+│    │ camera_id   │ rgb_path   │ therm  │ rgm_path │ temp_c  │  │
+│    └─────────────┴────────────┴────────┴──────────┴─────────┘  │
+└────────────────────────────────────────────────────────────────┘
+
+
 
 ## Technical Details
 
-- **Backend**: Flask web framework with threaded video capture
-- **Video Processing**: OpenCV with RTSP and USB camera support
-- **Temperature API**: HTTP-based GeoVision camera API
-- **Streaming**: MJPEG over HTTP for real-time video
-- **Frontend**: Vanilla JavaScript with responsive CSS
-
-## Support
-
-For issues with:
-- **GeoVision cameras**: Check camera firmware and network configuration
-- **RGM cameras**: Verify USB connection and driver installation
-- **Application**: Check console output for error messages and logs
+- **Backend**: Flask with threaded video capture
+- **Video**: OpenCV with RTSP and MJPEG streaming
+- **Temperature API**: GeoVision HTTP API with normalized coordinates
+- **Frontend**: Vanilla JavaScript with dynamic DOM manipulation
+- **State Management**: Server-side camera manager with thread-safe operations
 
 ## License
 

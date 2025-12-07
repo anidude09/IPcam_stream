@@ -3,69 +3,129 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoVision Dual Stream</title>
+    <title>Multi-Camera Stream Viewer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   </head>
   <body>
     <header>
-      <h1>GeoVision Stream Viewer</h1>
+      <h1>GeoVision + RGM Stream Viewer</h1>
     </header>
+    
+    <!-- Add Camera Panel -->
     <section class="config-panel">
       <div class="config-header">
-        <h2>GeoVision Camera Settings</h2>
-        <p>Update credentials server-wide and restart streams.</p>
+        <h2>Add GeoVision Camera</h2>
+        <p>Configure a new camera to start streaming (RGB + Thermal alongside RGM)</p>
       </div>
-      <form id="geovision-form" class="config-form">
+      <form id="add-camera-form" class="config-form">
         <div class="form-row">
-          <label for="gv-ip">Camera IP</label>
-          <input type="text" id="gv-ip" name="ip" value="{{ geovision.ip_address }}" required>
+          <label for="cam-name">Camera Name</label>
+          <input type="text" id="cam-name" name="name" placeholder=" " required>
         </div>
         <div class="form-row">
-          <label for="gv-username">Username</label>
-          <input type="text" id="gv-username" name="username" value="{{ geovision.username }}" required>
+          <label for="cam-ip">IP Address</label>
+          <input type="text" id="cam-ip" name="ip_address" placeholder="192.168.0.10" required>
         </div>
         <div class="form-row">
-          <label for="gv-password">Password</label>
-          <input type="password" id="gv-password" name="password" placeholder="••••••••">
+          <label for="cam-username">Username</label>
+          <input type="text" id="cam-username" name="username" value="admin" required>
+        </div>
+        <div class="form-row">
+          <label for="cam-password">Password</label>
+          <input type="password" id="cam-password" name="password" placeholder="••••••••">
         </div>
         <div class="form-actions">
-          <button type="submit">Apply &amp; Restart Streams</button>
-          <span id="geovision-status" class="config-status muted">Idle</span>
+          <button type="submit" class="btn-primary">Add Camera</button>
+          <span id="add-camera-status" class="config-status muted"></span>
         </div>
       </form>
     </section>
-    <main>
-      <section class="stream">
-        <h2>GeoVision RGB</h2>
-        <img data-stream="rgb" src="/video/rgb" alt="RGB Stream" />
-      </section>
-      <section class="stream">
-        <h2>GeoVision Thermal <span class="stream-hint">(Click to measure)</span></h2>
-        <div class="stream-container" id="thermal-container">
-          <img class="clickable" id="thermal-img" data-stream="thermal" src="/video/thermal" alt="Thermal Stream" />
-          <div class="thermal-overlay" id="thermal-overlay">
-            <div class="thermal-crosshair" id="thermal-crosshair"></div>
-            <div class="thermal-temp" id="thermal-temp"></div>
+
+    <!-- Camera Streams Container -->
+    <main id="cameras-container">
+      {% if cameras %}
+        {% for camera in cameras %}
+        <div class="camera-row" data-camera-id="{{ camera.id }}">
+          <div class="camera-row-header">
+            <h2>{{ camera.name }}</h2>
+            <span class="camera-ip">{{ camera.ip_address }}</span>
+            <button class="btn-remove" data-remove-camera="{{ camera.id }}" title="Remove camera">✕</button>
+          </div>
+          <div class="triple-stream-grid">
+            <!-- GeoVision RGB -->
+            <section class="stream">
+              <h3>GeoVision RGB</h3>
+              <img src="/video/{{ camera.id }}/rgb" alt="RGB Stream" />
+            </section>
+            <!-- GeoVision Thermal -->
+            <section class="stream">
+              <h3>GeoVision Thermal <span class="stream-hint">(Click to measure)</span></h3>
+              <div class="stream-container thermal-container" data-camera-id="{{ camera.id }}">
+                <img class="thermal-img clickable" 
+                     data-camera-id="{{ camera.id }}" 
+                     src="/video/{{ camera.id }}/thermal" 
+                     alt="Thermal Stream" />
+                <div class="thermal-overlay">
+                  <div class="thermal-crosshair"></div>
+                  <div class="thermal-temp"></div>
+                </div>
+              </div>
+            </section>
+            <!-- RGM Thermal -->
+            <section class="stream rgm-stream">
+              <h3>RGM Thermal <span class="stream-hint">(Center temp)</span></h3>
+              <div class="stream-container rgm-container">
+                {% if rgm_available %}
+                <img src="/video/rgm" alt="RGM Thermal Stream" />
+                <div class="rgm-temp-badge rgm-temp-display">Center: -- °C</div>
+                {% else %}
+                <div class="stream-placeholder">
+                  <p>RGM camera unavailable</p>
+                </div>
+                {% endif %}
+              </div>
+            </section>
           </div>
         </div>
-      </section>
-      <section class="stream">
-        <h2>RGM Thermal <span class="stream-hint">(Center temperature)</span></h2>
-        <div class="stream-container rgm-container" id="rgm-container" data-available="{{ 'true' if rgm_available else 'false' }}">
-          {% if rgm_available %}
-          <img id="rgm-img" src="/video/rgm" alt="RGM Thermal Stream" />
-          {% else %}
-          <div class="stream-placeholder">
-            <p>RGM camera unavailable</p>
+        {% endfor %}
+      {% else %}
+        <!-- No GeoVision cameras - show RGM only -->
+        <div class="camera-row rgm-only-row" id="rgm-only-row">
+          <div class="camera-row-header">
+            <h2>RGM Local Thermal</h2>
+            <span class="camera-ip">USB Connected</span>
           </div>
-          {% endif %}
-          <div class="rgm-temp-badge" id="rgm-temp">Center: -- °C</div>
+          <div class="single-stream-grid">
+            <section class="stream rgm-stream">
+              <h3>RGM Thermal <span class="stream-hint">(Center temperature)</span></h3>
+              <div class="stream-container rgm-container">
+                {% if rgm_available %}
+                <img src="/video/rgm" alt="RGM Thermal Stream" />
+                <div class="rgm-temp-badge rgm-temp-display">Center: -- °C</div>
+                {% else %}
+                <div class="stream-placeholder">
+                  <p>RGM camera unavailable</p>
+                  <p class="hint">Add a GeoVision camera above to start monitoring</p>
+                </div>
+                {% endif %}
+              </div>
+            </section>
+          </div>
         </div>
-      </section>
+      {% endif %}
     </main>
+
     <footer>
-      <span>Local viewer</span>
+      <span>Multi-Camera Stream Viewer • RGB + Thermal + RGM</span>
     </footer>
+
+    <script>
+      // Configuration passed from server
+      window.THERMAL_CONFIG = {
+        apiCoordMax: {{ thermal_api_coord_max or 10000 }}
+      };
+      window.RGM_AVAILABLE = {{ 'true' if rgm_available else 'false' }};
+    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
   </body>
 </html>
