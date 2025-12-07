@@ -1,6 +1,7 @@
 """
 Flask application for multi-camera GeoVision and RGM stream viewer.
 Supports multiple GeoVision cameras with dynamic configuration.
+Includes RFID-triggered capture system for cattle identification.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request
 from geovision.camera_manager import camera_manager
 from geovision.config import THERMAL_STREAM
 from rgm.streaming import RGMThermalStream
+from rfid import init_capture_manager, get_capture_manager, init_rfid_listener, get_rfid_listener
 
 
 def str_to_bool(value: str) -> bool:
@@ -54,9 +56,29 @@ def create_app() -> Flask:
             )
         except Exception as e:
             print(f"[App] Failed to add default camera: {e}")
+    
+    # Initialize RFID capture system
+    capture_mgr = init_capture_manager(
+        camera_manager=camera_manager,
+        rgm_stream=rgm_stream
+    )
+    
+    # Initialize RFID listener (auto-start if port configured)
+    rfid_port = os.getenv("RFID_PORT")
+    rfid_group = os.getenv("RFID_GROUP", "default")
+    init_rfid_listener(
+        capture_manager=capture_mgr,
+        port=rfid_port,
+        group=rfid_group,
+        auto_start=bool(rfid_port)
+    )
+    print(f"[App] RFID capture system initialized (port: {rfid_port or 'not configured'})")
 
     @atexit.register
     def shutdown():
+        rfid = get_rfid_listener()
+        if rfid:
+            rfid.stop()
         camera_manager.shutdown()
         if rgm_stream:
             rgm_stream.stop()
@@ -267,6 +289,108 @@ def create_app() -> Flask:
             "api_coord_max": THERMAL_STREAM.sensor_width or 10000,
             "channel": THERMAL_STREAM.channel,
         })
+
+    # ==================== RFID Capture API ====================
+    
+    @app.route("/api/rfid/capture", methods=["POST"])
+    def rfid_capture():
+        """
+        Manually trigger a capture (simulates RFID scan).
+        Useful for testing without physical RFID reader.
+        """
+        data = request.get_json(silent=True) or request.form
+        
+        eid = (data.get("eid") or "").strip()
+        group = (data.get("group") or "").strip()
+        camera_id = data.get("camera_id")
+        notes = data.get("notes", "")
+        
+        if not eid:
+            return jsonify({"error": "EID (tag ID) is required"}), 400
+        
+        capture_mgr = get_capture_manager()
+        if not capture_mgr:
+            return jsonify({"error": "Capture manager not initialized"}), 503
+        
+        rfid = get_rfid_listener()
+        if not group and rfid:
+            group = rfid.group
+        
+        try:
+            result = capture_mgr.capture_on_rfid_scan(
+                eid=eid,
+                group=group or "manual",
+                camera_id=camera_id,
+                notes=notes
+            )
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    
+    @app.route("/api/rfid/status")
+    def rfid_status():
+        """Get RFID listener status."""
+        rfid = get_rfid_listener()
+        if not rfid:
+            return jsonify({
+                "configured": False,
+                "running": False,
+                "port": None,
+                "group": None
+            })
+        return jsonify({
+            "configured": True,
+            "running": rfid.is_running(),
+            "port": rfid.port,
+            "group": rfid.group
+        })
+    
+    @app.route("/api/rfid/start", methods=["POST"])
+    def rfid_start():
+        """Start RFID listener."""
+        rfid = get_rfid_listener()
+        if not rfid:
+            return jsonify({"error": "RFID listener not configured"}), 503
+        
+        data = request.get_json(silent=True) or {}
+        if data.get("port"):
+            rfid.port = data["port"]
+        
+        if rfid.start():
+            return jsonify({"status": "ok", "message": "RFID listener started"})
+        return jsonify({"error": "Failed to start RFID listener"}), 500
+    
+    @app.route("/api/rfid/stop", methods=["POST"])
+    def rfid_stop():
+        """Stop RFID listener."""
+        rfid = get_rfid_listener()
+        if not rfid:
+            return jsonify({"error": "RFID listener not configured"}), 503
+        
+        rfid.stop()
+        return jsonify({"status": "ok", "message": "RFID listener stopped"})
+    
+    @app.route("/api/rfid/group", methods=["POST"])
+    def rfid_set_group():
+        """Set the group name for RFID captures."""
+        data = request.get_json(silent=True) or request.form
+        group = (data.get("group") or "").strip()
+        
+        if not group:
+            return jsonify({"error": "Group name is required"}), 400
+        
+        rfid = get_rfid_listener()
+        if rfid:
+            rfid.set_group(group)
+        
+        return jsonify({"status": "ok", "group": group})
+    
+    @app.route("/api/rfid/ports")
+    def rfid_list_ports():
+        """List available serial ports."""
+        from rfid import RFIDListener
+        ports = RFIDListener.list_ports()
+        return jsonify({"ports": ports})
 
     return app
 

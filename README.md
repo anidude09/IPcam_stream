@@ -1,6 +1,6 @@
-# GeoVision Multi-Camera Stream Viewer
+# GeoVision Multi-Camera Stream Viewer with RFID Capture
 
-A Flask-based web application for monitoring **multiple GeoVision IP cameras** (RGB + thermal) alongside a local RGM thermal sensor, with real-time temperature measurement.
+A Flask-based web application for monitoring **multiple GeoVision IP cameras** (RGB + thermal) alongside a local RGM thermal sensor, with real-time temperature measurement and **RFID-triggered frame capture** for cattle identification.
 
 ## Features
 
@@ -11,6 +11,7 @@ A Flask-based web application for monitoring **multiple GeoVision IP cameras** (
 - **Dynamic Configuration**: Add/remove cameras through web interface without restart
 - **Local RGM Thermal Camera**: USB-connected thermal imaging with center temperature display
 - **Automatic Reconnection**: Handles network interruptions gracefully
+- **RFID Capture System**: AWR300 RFID reader triggers automatic frame capture with temperature logging
 
 ## Quick Start
 
@@ -77,6 +78,17 @@ python app.py
 | `/api/cameras/<id>/temperature?x=<x>&y=<y>` | Get temperature at coordinates |
 | `/rgm/center_temperature` | Get RGM center temperature |
 
+### RFID Capture
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/rfid/capture` | POST | Manual capture trigger (body: `{eid, group, notes}`) |
+| `/api/rfid/status` | GET | Get RFID listener status |
+| `/api/rfid/start` | POST | Start RFID listener (body: `{port}` optional) |
+| `/api/rfid/stop` | POST | Stop RFID listener |
+| `/api/rfid/group` | POST | Set capture group name (body: `{group}`) |
+| `/api/rfid/ports` | GET | List available serial ports |
+
 ## Temperature Measurement
 
 ### How It Works
@@ -128,6 +140,8 @@ $env:RGM_USE_MSMF="true"
 | `RGM_VIEW_SCALE` | `3` | Display scaling factor |
 | `RGM_TEMP_MIN_C` | `20.0` | Min temperature for color scale |
 | `RGM_TEMP_MAX_C` | `40.0` | Max temperature for color scale |
+| `RFID_PORT` | - | Serial port for AWR300 (e.g., `COM3`) |
+| `RFID_GROUP` | `default` | Default group name for captures |
 
 ## Project Structure
 
@@ -144,6 +158,13 @@ IPcam_stream/
 │   ├── io.py                   # Camera I/O
 │   ├── processing.py           # Thermal processing
 │   └── streaming.py            # MJPEG streaming
+├── rfid/
+│   ├── capture_manager.py      # Frame capture and CSV logging
+│   ├── listener.py             # AWR300 serial port listener
+│   └── script.py               # Standalone RFID logger (legacy)
+├── data/                       # Created automatically
+│   ├── captures/               # Captured frame images
+│   └── cattle_captures.csv     # Capture metadata log
 ├── static/
 │   ├── css/style.css           # Styles
 │   └── js/main.js              # Frontend logic
@@ -156,42 +177,77 @@ IPcam_stream/
 
 
 
-## Proposed Architecutre 
-┌─────────────────┐     Serial      ┌──────────────────┐
-│  AWR300 RFID    │ ─────────────▶ │  RFID Listener    |
-│  Stick Reader   │                 │  (Background)    │
-└─────────────────┘                 └────────┬─────────┘
-                                             │
-                                    Tag Scanned Event
-                                             │
-                                             ▼
-┌────────────────────────────────────────────────────────────────┐
-│                    Capture Manager                             │
-│  1. Grab frame from GeoVision RGB stream                       │
-│  2. Grab frame from GeoVision Thermal stream                   │
-│  3. Grab frame from RGM stream                                 │
-│  4. (Optional) Get temperature reading at center               │
-│  5. Save frames to disk as JPEG files                          │
-│  6. Log metadata + file paths to CSV                           │
-└────────────────────────────────────────────────────────────────┘
-                                             │
-                                             ▼
-┌────────────────────────────────────────────────────────────────┐
-│  Storage Structure                                             │
-│                                                                │
-│  captures/                                                     │
-│    ├── 2024-12-07_143045_982000123456789/                      │
-│    │   ├── geovision_rgb.jpg                                   │
-│    │   ├── geovision_thermal.jpg                               │
-│    │   └── rgm_thermal.jpg                                     │
-│    └── ...                                                     │
-│                                                                │
-│  cattle_captures.csv                                           │
-│    ┌─────────────┬────────────┬────────┬──────────┬─────────┐  │
-│    │ eid         │ timestamp  │ date   │ time     │ group   │  │
-│    │ camera_id   │ rgb_path   │ therm  │ rgm_path │ temp_c  │  │
-│    └─────────────┴────────────┴────────┴──────────┴─────────┘  │
-└────────────────────────────────────────────────────────────────┘
+## RFID Capture System
+
+### Overview
+
+When an RFID tag is scanned with the AWR300 reader, the system automatically:
+1. Captures frames from all active camera streams (GeoVision RGB, Thermal, RGM)
+2. Measures center temperature from thermal cameras
+3. Saves frames as JPEG files
+4. Logs metadata to CSV with relative file paths
+
+### Setup AWR300 RFID Reader
+
+1. **Connect AWR300** to USB port
+2. **Find the COM port**:
+   - Open Device Manager → Ports (COM & LPT)
+   - Look for "AWR300" or "USB Serial Device"
+   - Note the COM port (e.g., `COM3`)
+
+3. **Configure environment**:
+```powershell
+$env:RFID_PORT="COM3"
+$env:RFID_GROUP="Session_2024_12_07"
+python app.py
+```
+
+
+
+4. **Or start via API** (after app is running):
+```powershell
+# List available ports
+curl http://localhost:8000/api/rfid/ports
+
+# Start listener on specific port
+curl -X POST http://localhost:8000/api/rfid/start -H "Content-Type: application/json" -d "{\"port\": \"COM3\"}"
+```
+
+### Manual Capture 
+
+Trigger a capture without RFID reader:
+```powershell
+curl -X POST http://localhost:8000/api/rfid/capture -H "Content-Type: application/json" -d "{\"eid\": \"TEST123456\", \"group\": \"TestSession\"}"
+```
+
+### Output Structure
+
+```
+data/
+├── captures/
+│   └── 2024-12-07_143045_982000123456789/
+│       ├── geovision_rgb.jpg
+│       ├── geovision_thermal.jpg
+│       └── rgm_thermal.jpg
+└── cattle_captures.csv
+```
+
+### CSV Format
+
+| Column | Description |
+|--------|-------------|
+| `eid` | Electronic ID from RFID tag |
+| `timestamp` | ISO format timestamp |
+| `date` | Date (YYYY-MM-DD) |
+| `time` | Time (HH:MM:SS) |
+| `group` | Session/group name |
+| `camera_id` | GeoVision camera used |
+| `rgb_frame_path` | Relative path to RGB frame |
+| `thermal_frame_path` | Relative path to thermal frame |
+| `rgm_frame_path` | Relative path to RGM frame |
+| `geovision_temp_c` | Center temperature from GeoVision |
+| `rgm_temp_c` | Center temperature from RGM |
+| `notes` | Optional notes |
 
 
 
