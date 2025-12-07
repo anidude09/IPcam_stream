@@ -1,263 +1,219 @@
-# GeoVision Multi-Camera Stream Viewer with RFID Capture
+# IPcam_stream - Cattle Monitoring System
 
-A Flask-based web application for monitoring **multiple GeoVision IP cameras** (RGB + thermal) alongside a local RGM thermal sensor, with real-time temperature measurement and **RFID-triggered frame capture** for cattle identification.
+A Flask-based application for real-time cattle monitoring using thermal cameras and RFID identification. The system streams video from GeoVision IP cameras (RGB + thermal) and a local RGM thermal sensor, allowing interactive temperature measurement. When cattle are scanned with an RFID reader, the system automatically captures frames from all cameras along with temperature readings and logs everything to CSV.
 
 ## Features
 
-- **Multi-Camera Support**: Add, remove, and manage multiple GeoVision cameras
-- **Dual Streams per Camera**: RGB and thermal video feeds from each IP camera
-- **Interactive Temperature Measurement**: Click anywhere on thermal streams to measure temperature
-- **Real-time MJPEG Streaming**: Low-latency video feeds in web browser
-- **Dynamic Configuration**: Add/remove cameras through web interface without restart
-- **Local RGM Thermal Camera**: USB-connected thermal imaging with center temperature display
-- **Automatic Reconnection**: Handles network interruptions gracefully
-- **RFID Capture System**: AWR300 RFID reader triggers automatic frame capture with temperature logging
+- 📹 **Live Streaming** - View GeoVision RGB, thermal, and RGM camera feeds side-by-side
+- 🌡️ **Temperature Measurement** - Click anywhere on thermal streams to get instant readings
+- 📡 **RFID Capture** - Auto-capture frames + temperatures when cattle tags are scanned
+- ➕ **Multi-Camera** - Add/remove GeoVision cameras dynamically via web UI
+- 📊 **CSV Logging** - All captures logged with timestamps, EID, and file paths
 
-## Quick Start
+---
 
-### 1. Setup Environment
+## Setup & Installation
+
+### Prerequisites
+- Python 3.8+
+- GeoVision IP camera(s) on the same network
+- RGM thermal camera (USB)
+- AWR300 RFID reader (USB) - optional
+
+### Step 1: Clone & Setup Virtual Environment
+
 ```powershell
 cd C:\Users\aniruddh\IPcam_stream
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+```
+
+### Step 2: Install Dependencies
+
+```powershell
 pip install -r requirements.txt
 ```
 
-### 2. Run the Application
+### Step 3: Configure (Optional)
+
+Set environment variables for default camera and RFID:
+
 ```powershell
-python app.py
-```
-
-### 3. Open Browser
-Navigate to: **http://localhost:8000**
-
-### 4. Add Cameras
-Use the "Add GeoVision Camera" form to add cameras:
-- Enter a **name** (e.g., "Front Entrance")
-- Enter the camera's **IP address**
-- Enter **username** and **password**
-- Click "Add Camera"
-
-You can add multiple cameras - each will display its RGB and thermal streams.
-
-## Optional: Pre-configure Default Camera
-
-Set environment variables before starting to auto-add a camera:
-```powershell
+# GeoVision camera (optional - can add via UI)
 $env:GEOVISION_IP="192.168.1.100"
 $env:GEOVISION_USER="admin"
 $env:GEOVISION_PASS="your_password"
 $env:GEOVISION_NAME="Main Camera"
 
+# RFID reader (optional)
+$env:RFID_PORT="COM3"
+$env:RFID_GROUP="Session_2024_12_07"
+
+# RGM camera (optional - defaults usually work)
+$env:RGM_DEVICE_INDEX="0"
+```
+
+### Step 4: Run the Application
+
+```powershell
 python app.py
 ```
 
-## API Reference
+### Step 5: Open Browser
 
-### Camera Management
+Navigate to: **http://localhost:8000**
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/cameras` | GET | List all cameras |
-| `/api/cameras` | POST | Add a new camera |
-| `/api/cameras/<id>` | PUT | Update camera settings |
-| `/api/cameras/<id>` | DELETE | Remove a camera |
+---
 
-### Video Streams
+## Usage
 
-| Endpoint | Description |
-|----------|-------------|
-| `/video/<camera_id>/rgb` | RGB video stream |
-| `/video/<camera_id>/thermal` | Thermal video stream |
-| `/video/rgm` | RGM local thermal stream |
+### Adding a Camera
+1. Fill in the "Add GeoVision Camera" form (name, IP, username, password)
+2. Click "Add Camera"
+3. Camera streams appear automatically
 
-### Temperature
-
-| Endpoint | Description |
-|----------|-------------|
-| `/api/cameras/<id>/temperature?x=<x>&y=<y>` | Get temperature at coordinates |
-| `/rgm/center_temperature` | Get RGM center temperature |
+### Measuring Temperature
+1. Click anywhere on a thermal stream (GeoVision or RGM)
+2. Temperature displays at clicked point
+3. Reading auto-refreshes every second
 
 ### RFID Capture
+1. Connect AWR300 to USB
+2. Start listener via API or environment variable
+3. Scan cattle tag → frames + temps auto-saved to `data/`
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/rfid/capture` | POST | Manual capture trigger (body: `{eid, group, notes}`) |
-| `/api/rfid/status` | GET | Get RFID listener status |
-| `/api/rfid/start` | POST | Start RFID listener (body: `{port}` optional) |
-| `/api/rfid/stop` | POST | Stop RFID listener |
-| `/api/rfid/group` | POST | Set capture group name (body: `{group}`) |
-| `/api/rfid/ports` | GET | List available serial ports |
-
-## Temperature Measurement
-
-### How It Works
-1. Click anywhere on a thermal stream
-2. Coordinates are converted to GeoVision API format (0-10000 normalized)
-3. Temperature is fetched from the camera's API
-4. Reading updates automatically every second
-
-### GeoVision API Coordinate System
-The GeoVision temperature API uses **normalized coordinates (0-10000)**:
-- `(0, 0)` = Top-left corner
-- `(10000, 10000)` = Bottom-right corner
-- `(5000, 5000)` = Center
-
-## Troubleshooting
-
-### Camera Won't Connect
-- Verify IP address is correct and camera is on same network
-- Check username/password credentials
-- Ensure RTSP streaming is enabled on camera
-- Check firewall settings
-
-### Temperature Readings Incorrect
-- The application now uses normalized coordinates (0-10000)
-- Check browser console (F12) for coordinate debug info
-- Verify camera's thermal API is functioning
-
-### RGM Camera Not Detected
+### Manual Capture (Testing)
 ```powershell
-# Try different device index
-$env:RGM_DEVICE_INDEX="1"
-
-# Or try MSMF backend
-$env:RGM_USE_MSMF="true"
+curl -X POST http://localhost:8000/api/rfid/capture -H "Content-Type: application/json" -d "{\"eid\": \"TEST123\", \"group\": \"TestSession\"}"
 ```
 
-## Configuration Reference
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GEOVISION_IP` | - | Default camera IP (optional) |
-| `GEOVISION_USER` | `admin` | Default camera username |
-| `GEOVISION_PASS` | `admin123` | Default camera password |
-| `GEOVISION_NAME` | `GeoVision Camera` | Default camera display name |
-| `RGM_DEVICE_INDEX` | `0` | USB camera device index |
-| `RGM_USE_MSMF` | `false` | Use MSMF instead of DirectShow |
-| `RGM_VIEW_SCALE` | `3` | Display scaling factor |
-| `RGM_TEMP_MIN_C` | `20.0` | Min temperature for color scale |
-| `RGM_TEMP_MAX_C` | `40.0` | Max temperature for color scale |
-| `RFID_PORT` | - | Serial port for AWR300 (e.g., `COM3`) |
-| `RFID_GROUP` | `default` | Default group name for captures |
+---
 
 ## Project Structure
 
 ```
 IPcam_stream/
-├── app.py                      # Main Flask application
-├── geovision/
-│   ├── camera_manager.py       # Multi-camera management
-│   ├── config.py               # Camera configuration
-│   ├── streams.py              # RTSP streaming
-│   ├── temperature.py          # Temperature API
-│   └── overlay.py              # Drawing utilities
-├── rgm/
-│   ├── io.py                   # Camera I/O
-│   ├── processing.py           # Thermal processing
-│   └── streaming.py            # MJPEG streaming
-├── rfid/
-│   ├── capture_manager.py      # Frame capture and CSV logging
-│   ├── listener.py             # AWR300 serial port listener
-│   └── script.py               # Standalone RFID logger (legacy)
-├── data/                       # Created automatically
-│   ├── captures/               # Captured frame images
-│   └── cattle_captures.csv     # Capture metadata log
-├── static/
-│   ├── css/style.css           # Styles
-│   └── js/main.js              # Frontend logic
-├── templates/
-│   └── index.html              # Main page
-├── requirements.txt            # Dependencies
-└── README.md                   # This file
+├── app.py                  # Flask application
+├── geovision/              # GeoVision camera modules
+│   ├── camera_manager.py   # Multi-camera management
+│   ├── streams.py          # RTSP streaming
+│   └── temperature.py      # Temperature API
+├── rgm/                    # RGM thermal camera
+│   ├── streaming.py        # MJPEG streaming
+│   └── processing.py       # Thermal processing
+├── rfid/                   # RFID capture system
+│   ├── capture_manager.py  # Frame capture + CSV logging
+│   └── listener.py         # AWR300 serial listener
+├── data/                   # Auto-created
+│   ├── captures/           # Saved frames (JPEG)
+│   └── cattle_captures.csv # Capture log
+├── static/                 # Frontend assets
+├── templates/              # HTML templates
+└── requirements.txt        # Python dependencies
 ```
 
+---
 
+## API Reference
 
+### Camera Management
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/cameras` | GET | List all cameras |
+| `/api/cameras` | POST | Add camera |
+| `/api/cameras/<id>` | DELETE | Remove camera |
 
-## RFID Capture System
+### Video Streams
+| Endpoint | Description |
+|----------|-------------|
+| `/video/<id>/rgb` | GeoVision RGB stream |
+| `/video/<id>/thermal` | GeoVision thermal stream |
+| `/video/rgm` | RGM thermal stream |
 
-### Overview
+### Temperature
+| Endpoint | Description |
+|----------|-------------|
+| `/api/cameras/<id>/temperature?x=X&y=Y` | Get temp at point |
+| `/rgm/center_temperature` | RGM center temp |
 
-When an RFID tag is scanned with the AWR300 reader, the system automatically:
-1. Captures frames from all active camera streams (GeoVision RGB, Thermal, RGM)
-2. Measures center temperature from thermal cameras
-3. Saves frames as JPEG files
-4. Logs metadata to CSV with relative file paths
+### RFID
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/rfid/capture` | POST | Manual capture |
+| `/api/rfid/status` | GET | Listener status |
+| `/api/rfid/start` | POST | Start listener |
+| `/api/rfid/stop` | POST | Stop listener |
+| `/api/rfid/ports` | GET | List COM ports |
 
-### Setup AWR300 RFID Reader
+---
 
-1. **Connect AWR300** to USB port
-2. **Find the COM port**:
-   - Open Device Manager → Ports (COM & LPT)
-   - Look for "AWR300" or "USB Serial Device"
-   - Note the COM port (e.g., `COM3`)
+## Configuration
 
-3. **Configure environment**:
-```powershell
-$env:RFID_PORT="COM3"
-$env:RFID_GROUP="Session_2024_12_07"
-python app.py
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEOVISION_IP` | - | Camera IP address |
+| `GEOVISION_USER` | `admin` | Camera username |
+| `GEOVISION_PASS` | `admin123` | Camera password |
+| `RGM_DEVICE_INDEX` | `0` | USB camera index |
+| `RFID_PORT` | - | Serial port (e.g., `COM3`) |
+| `RFID_GROUP` | `default` | Capture group name |
+
+---
+
+## Output Data
+
+### CSV Format (`data/cattle_captures.csv`)
+
+| Column | Example |
+|--------|---------|
+| `eid` | `982000123456789` |
+| `timestamp` | `2024-12-07T14:30:45` |
+| `group` | `Morning_Weigh` |
+| `rgb_frame_path` | `data/captures/.../geovision_rgb.jpg` |
+| `thermal_frame_path` | `data/captures/.../geovision_thermal.jpg` |
+| `rgm_frame_path` | `data/captures/.../rgm_thermal.jpg` |
+| `geovision_temp_c` | `38.50` |
+| `rgm_temp_c` | `32.10` |
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Camera won't connect | Check IP, credentials, and firewall |
+| RGM not detected | Try `$env:RGM_DEVICE_INDEX="1"` |
+| RFID not working | Check COM port in Device Manager |
+| Temperature wrong | Coordinates use 0-10000 normalized scale |
+
+---
+
+## Architecture
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  GeoVision   │     │     RGM      │     │   AWR300     │
+│  IP Camera   │     │   Thermal    │     │    RFID      │
+│  (Network)   │     │    (USB)     │     │   (Serial)   │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │                    │                    │
+       └────────────────────┼────────────────────┘
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │  Flask Server   │
+                   │    (app.py)     │
+                   └────────┬────────┘
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+        ┌──────────┐  ┌──────────┐  ┌──────────┐
+        │  Browser │  │   CSV    │  │  Frames  │
+        │ (Streams)│  │   Log    │  │  (JPEG)  │
+        └──────────┘  └──────────┘  └──────────┘
 ```
 
-
-
-4. **Or start via API** (after app is running):
-```powershell
-# List available ports
-curl http://localhost:8000/api/rfid/ports
-
-# Start listener on specific port
-curl -X POST http://localhost:8000/api/rfid/start -H "Content-Type: application/json" -d "{\"port\": \"COM3\"}"
-```
-
-### Manual Capture 
-
-Trigger a capture without RFID reader:
-```powershell
-curl -X POST http://localhost:8000/api/rfid/capture -H "Content-Type: application/json" -d "{\"eid\": \"TEST123456\", \"group\": \"TestSession\"}"
-```
-
-### Output Structure
-
-```
-data/
-├── captures/
-│   └── 2024-12-07_143045_982000123456789/
-│       ├── geovision_rgb.jpg
-│       ├── geovision_thermal.jpg
-│       └── rgm_thermal.jpg
-└── cattle_captures.csv
-```
-
-### CSV Format
-
-| Column | Description |
-|--------|-------------|
-| `eid` | Electronic ID from RFID tag |
-| `timestamp` | ISO format timestamp |
-| `date` | Date (YYYY-MM-DD) |
-| `time` | Time (HH:MM:SS) |
-| `group` | Session/group name |
-| `camera_id` | GeoVision camera used |
-| `rgb_frame_path` | Relative path to RGB frame |
-| `thermal_frame_path` | Relative path to thermal frame |
-| `rgm_frame_path` | Relative path to RGM frame |
-| `geovision_temp_c` | Center temperature from GeoVision |
-| `rgm_temp_c` | Center temperature from RGM |
-| `notes` | Optional notes |
-
-
-
-## Technical Details
-
-- **Backend**: Flask with threaded video capture
-- **Video**: OpenCV with RTSP and MJPEG streaming
-- **Temperature API**: GeoVision HTTP API with normalized coordinates
-- **Frontend**: Vanilla JavaScript with dynamic DOM manipulation
-- **State Management**: Server-side camera manager with thread-safe operations
+---
 
 ## License
 
