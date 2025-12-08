@@ -76,7 +76,6 @@ class RFIDListener:
     def set_group(self, group: str) -> None:
         """Set the group name for captures."""
         self.group = group
-        print(f"[RFIDListener] Group set to: {group}")
     
     @staticmethod
     def list_ports() -> List[dict]:
@@ -94,13 +93,8 @@ class RFIDListener:
     def find_awr300() -> Optional[str]:
         """Try to find AWR300 serial port automatically."""
         for port in list_ports.comports():
-            # AWR300 typically shows up with "AWR300" in description or manufacturer
             if 'AWR300' in (port.description or '') or 'AWR300' in (port.manufacturer or ''):
-                print(f"[RFIDListener] Found AWR300 at: {port.device}")
                 return port.device
-            # Also check for generic USB serial
-            if 'USB' in (port.description or '').upper():
-                print(f"[RFIDListener] Possible AWR300 at: {port.device} ({port.description})")
         return None
     
     def connect(self) -> bool:
@@ -108,15 +102,11 @@ class RFIDListener:
         if self._serial and self._serial.is_open:
             return True
         
-        # Try to find port if not specified
         if not self.port:
             self.port = self.find_awr300()
         
         if not self.port:
-            print("[RFIDListener] No RFID port specified and auto-detect failed")
-            print("[RFIDListener] Available ports:")
-            for p in self.list_ports():
-                print(f"  - {p['device']}: {p['description']}")
+            print("[RFID] No port specified and auto-detect failed")
             return False
         
         try:
@@ -125,10 +115,10 @@ class RFIDListener:
                 baudrate=self.baudrate,
                 timeout=self.timeout
             )
-            print(f"[RFIDListener] Connected to {self.port} at {self.baudrate} baud")
+            print(f"[RFID] Connected to {self.port}")
             return True
         except serial.SerialException as e:
-            print(f"[RFIDListener] Failed to connect to {self.port}: {e}")
+            print(f"[RFID] Connection failed: {e}")
             return False
     
     def disconnect(self) -> None:
@@ -139,12 +129,10 @@ class RFIDListener:
             except Exception:
                 pass
             self._serial = None
-            print("[RFIDListener] Disconnected from RFID reader")
     
     def start(self) -> bool:
         """Start listening for RFID scans in background thread."""
         if self._running:
-            print("[RFIDListener] Already running")
             return True
         
         if not self.connect():
@@ -153,7 +141,7 @@ class RFIDListener:
         self._running = True
         self._thread = threading.Thread(target=self._listen_loop, daemon=True)
         self._thread.start()
-        print("[RFIDListener] Started listening for RFID scans")
+        print("[RFID] Listener started")
         return True
     
     def stop(self) -> None:
@@ -163,7 +151,7 @@ class RFIDListener:
             self._thread.join(timeout=2.0)
             self._thread = None
         self.disconnect()
-        print("[RFIDListener] Stopped")
+        print("[RFID] Listener stopped")
     
     def is_running(self) -> bool:
         """Check if listener is running."""
@@ -174,36 +162,25 @@ class RFIDListener:
         while self._running:
             try:
                 if not self._serial or not self._serial.is_open:
-                    print("[RFIDListener] Serial port closed, reconnecting...")
                     if not self.connect():
                         time.sleep(5.0)
                         continue
                 
-                # Read line from serial
                 line = self._serial.readline()
                 if not line:
                     continue
                 
-                # Decode and clean
                 text = line.decode('ascii', errors='ignore').strip()
-                if not text:
+                if not text or self._is_duplicate(text):
                     continue
                 
-                # Check for duplicate scan
-                if self._is_duplicate(text):
-                    continue
-                
-                print(f"\n[RFIDListener] Tag scanned: {text}")
-                
-                # Trigger capture
+                print(f"[RFID] Tag scanned: {text}")
                 self._handle_scan(text)
                 
-            except serial.SerialException as e:
-                print(f"[RFIDListener] Serial error: {e}")
+            except serial.SerialException:
                 self.disconnect()
                 time.sleep(2.0)
-            except Exception as e:
-                print(f"[RFIDListener] Error in listen loop: {e}")
+            except Exception:
                 time.sleep(0.5)
     
     def _is_duplicate(self, eid: str) -> bool:
@@ -224,48 +201,26 @@ class RFIDListener:
     
     def _handle_scan(self, eid: str) -> None:
         """Handle a tag scan - trigger capture and callbacks."""
-        # Trigger capture if manager available
         if self.capture_manager:
             try:
-                result = self.capture_manager.capture_on_rfid_scan(
-                    eid=eid,
-                    group=self.group
-                )
-                if result.get('success'):
-                    print(f"[RFIDListener] Capture successful for {eid}")
-                else:
-                    print(f"[RFIDListener] Capture had issues: {result.get('errors', [])}")
+                self.capture_manager.capture_on_rfid_scan(eid=eid, group=self.group)
             except Exception as e:
-                print(f"[RFIDListener] Capture error: {e}")
+                print(f"[Error] Capture failed: {e}")
         
-        # Call registered callbacks
         with self._lock:
             for callback in self._callbacks:
                 try:
                     callback(eid)
-                except Exception as e:
-                    print(f"[RFIDListener] Callback error: {e}")
+                except Exception:
+                    pass
     
     def manual_trigger(self, eid: str) -> dict:
-        """
-        Manually trigger a capture (for testing or API use).
-        
-        Args:
-            eid: Tag ID to use
-            
-        Returns:
-            Capture result dictionary
-        """
-        print(f"[RFIDListener] Manual trigger for EID: {eid}")
-        
+        """Manually trigger a capture (for testing or API use)."""
         if not self.capture_manager:
             return {'success': False, 'errors': ['No capture manager']}
         
         try:
-            return self.capture_manager.capture_on_rfid_scan(
-                eid=eid,
-                group=self.group
-            )
+            return self.capture_manager.capture_on_rfid_scan(eid=eid, group=self.group)
         except Exception as e:
             return {'success': False, 'errors': [str(e)]}
 

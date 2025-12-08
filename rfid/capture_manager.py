@@ -54,8 +54,6 @@ class CaptureManager:
         """Create data directories if they don't exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.captures_dir.mkdir(parents=True, exist_ok=True)
-        print(f"[CaptureManager] Data directory: {self.data_dir}")
-        print(f"[CaptureManager] Captures directory: {self.captures_dir}")
     
     def _setup_csv(self) -> None:
         """Initialize CSV file with headers if it doesn't exist."""
@@ -76,9 +74,6 @@ class CaptureManager:
                     'rgm_temp_c',
                     'notes'
                 ])
-            print(f"[CaptureManager] Created CSV file: {self.csv_file}")
-        else:
-            print(f"[CaptureManager] Using existing CSV: {self.csv_file}")
     
     def capture_on_rfid_scan(
         self,
@@ -110,11 +105,7 @@ class CaptureManager:
         capture_folder = self.captures_dir / folder_name
         capture_folder.mkdir(parents=True, exist_ok=True)
         
-        print(f"\n[CaptureManager] ===== RFID CAPTURE =====")
-        print(f"[CaptureManager] EID: {eid}")
-        print(f"[CaptureManager] Timestamp: {timestamp}")
-        print(f"[CaptureManager] Group: {group}")
-        print(f"[CaptureManager] Folder: {capture_folder}")
+        print(f"[Capture] EID: {eid} | Group: {group} | Time: {time_str}")
         
         result = {
             'eid': eid,
@@ -133,33 +124,25 @@ class CaptureManager:
             'errors': []
         }
         
-        # Capture GeoVision frames
+        # Capture GeoVision frames (includes temperature overlay)
         if self.camera_manager:
-            gv_result = self._capture_geovision_frames(
-                capture_folder, camera_id
-            )
-            result.update(gv_result)
+            gv_result = self._capture_geovision_frames(capture_folder, camera_id)
+            result['rgb_frame_path'] = gv_result.get('rgb_frame_path', '')
+            result['thermal_frame_path'] = gv_result.get('thermal_frame_path', '')
+            result['camera_id'] = gv_result.get('camera_id', 'none')
+            if gv_result.get('geovision_temp_c') is not None:
+                result['geovision_temp_c'] = f"{gv_result['geovision_temp_c']:.2f}"
         else:
             result['errors'].append('No camera manager configured')
         
-        # Capture RGM frame
+        # Capture RGM frame (includes temperature overlay)
         if self.rgm_stream:
             rgm_result = self._capture_rgm_frame(capture_folder)
-            result.update(rgm_result)
+            result['rgm_frame_path'] = rgm_result.get('rgm_frame_path', '')
+            if rgm_result.get('rgm_temp_c') is not None:
+                result['rgm_temp_c'] = f"{rgm_result['rgm_temp_c']:.2f}"
         else:
             result['errors'].append('No RGM stream configured')
-        
-        # Get GeoVision temperature (center of frame)
-        if self.camera_manager and result.get('camera_id') != 'none':
-            temp_result = self._get_geovision_temperature(result['camera_id'])
-            if temp_result is not None:
-                result['geovision_temp_c'] = f"{temp_result:.2f}"
-        
-        # Get RGM temperature (center)
-        if self.rgm_stream:
-            rgm_temp = self._get_rgm_temperature()
-            if rgm_temp is not None:
-                result['rgm_temp_c'] = f"{rgm_temp:.2f}"
         
         # Log to CSV
         self._log_to_csv(result)
@@ -170,10 +153,67 @@ class CaptureManager:
             result['rgm_frame_path']
         )
         
-        print(f"[CaptureManager] Capture complete: success={result['success']}")
-        print(f"[CaptureManager] ========================\n")
+        # Summary log
+        temps = []
+        if result['geovision_temp_c']:
+            temps.append(f"GV:{result['geovision_temp_c']}°C")
+        if result['rgm_temp_c']:
+            temps.append(f"RGM:{result['rgm_temp_c']}°C")
+        temp_str = ", ".join(temps) if temps else "no temps"
+        print(f"[Capture] Complete: {temp_str} | Saved to: {folder_name}")
         
         return result
+    
+    def _draw_temperature_overlay(
+        self,
+        frame: np.ndarray,
+        temp_c: Optional[float],
+        label: str = "Center"
+    ) -> np.ndarray:
+        """Draw temperature overlay on frame."""
+        if temp_c is None:
+            return frame
+        
+        h, w = frame.shape[:2]
+        
+        # Draw crosshair at center
+        cx, cy = w // 2, h // 2
+        color = (0, 255, 255)  # Yellow
+        cv2.line(frame, (cx - 15, cy), (cx + 15, cy), color, 2)
+        cv2.line(frame, (cx, cy - 15), (cx, cy + 15), color, 2)
+        cv2.circle(frame, (cx, cy), 8, color, 2)
+        
+        # Draw temperature text
+        temp_text = f"{temp_c:.1f}C"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.8
+        thickness = 2
+        
+        # Get text size for background
+        (text_w, text_h), baseline = cv2.getTextSize(temp_text, font, font_scale, thickness)
+        
+        # Position: slightly above and to the right of center
+        text_x = cx + 20
+        text_y = cy - 10
+        
+        # Draw background rectangle
+        padding = 5
+        cv2.rectangle(
+            frame,
+            (text_x - padding, text_y - text_h - padding),
+            (text_x + text_w + padding, text_y + padding),
+            (0, 0, 0),
+            -1
+        )
+        
+        # Draw temperature text
+        cv2.putText(frame, temp_text, (text_x, text_y), font, font_scale, color, thickness)
+        
+        # Draw label in top-left corner
+        label_text = f"{label} Temp"
+        cv2.putText(frame, label_text, (10, 25), font, 0.6, (255, 255, 255), 1)
+        
+        return frame
     
     def _capture_geovision_frames(
         self,
@@ -184,7 +224,8 @@ class CaptureManager:
         result = {
             'rgb_frame_path': '',
             'thermal_frame_path': '',
-            'camera_id': 'none'
+            'camera_id': 'none',
+            'geovision_temp_c': None
         }
         
         # Get camera - either specified or first available
@@ -195,10 +236,20 @@ class CaptureManager:
             managed = cameras[0] if cameras else None
         
         if not managed:
-            print("[CaptureManager] No GeoVision camera available")
             return result
         
         result['camera_id'] = managed.config.id
+        
+        # Get center temperature first (for overlay)
+        temp_c = None
+        try:
+            client = managed.get_temperature_client()
+            temp_result = client.get_dot_temperature(5000, 5000)
+            if temp_result:
+                temp_c, _, _ = temp_result
+                result['geovision_temp_c'] = temp_c
+        except Exception:
+            pass
         
         # Capture RGB frame
         if managed.rgb_stream:
@@ -206,43 +257,38 @@ class CaptureManager:
             if rgb_frame is not None:
                 rgb_path = capture_folder / "geovision_rgb.jpg"
                 if cv2.imwrite(str(rgb_path), rgb_frame):
-                    # Store relative path from project root
-                    result['rgb_frame_path'] = str(rgb_path.relative_to(Path.cwd()))
-                    print(f"[CaptureManager] Saved RGB: {result['rgb_frame_path']}")
-                else:
-                    print("[CaptureManager] Failed to save RGB frame")
-            else:
-                print("[CaptureManager] No RGB frame available")
+                    result['rgb_frame_path'] = str(rgb_path.as_posix())
         
-        # Capture Thermal frame
+        # Capture Thermal frame with temperature overlay
         if managed.thermal_stream:
             thermal_frame = managed.thermal_stream.latest_frame(copy=True)
             if thermal_frame is not None:
+                # Add temperature overlay
+                thermal_frame = self._draw_temperature_overlay(thermal_frame, temp_c, "GeoVision")
                 thermal_path = capture_folder / "geovision_thermal.jpg"
                 if cv2.imwrite(str(thermal_path), thermal_frame):
-                    result['thermal_frame_path'] = str(thermal_path.relative_to(Path.cwd()))
-                    print(f"[CaptureManager] Saved Thermal: {result['thermal_frame_path']}")
-                else:
-                    print("[CaptureManager] Failed to save thermal frame")
-            else:
-                print("[CaptureManager] No thermal frame available")
+                    result['thermal_frame_path'] = str(thermal_path.as_posix())
         
         return result
     
     def _capture_rgm_frame(self, capture_folder: Path) -> Dict[str, str]:
-        """Capture frame from RGM thermal camera."""
-        result = {'rgm_frame_path': ''}
+        """Capture frame from RGM thermal camera (already has overlay)."""
+        result = {'rgm_frame_path': '', 'rgm_temp_c': None}
         
+        # Get RGM center temperature for CSV
+        try:
+            center_data = self.rgm_stream.latest_center()
+            if center_data and 'temp_c' in center_data:
+                result['rgm_temp_c'] = center_data['temp_c']
+        except Exception:
+            pass
+        
+        # RGM frame already has temperature overlay from streaming
         rgm_frame = self.rgm_stream.latest_frame(copy=True)
         if rgm_frame is not None:
             rgm_path = capture_folder / "rgm_thermal.jpg"
             if cv2.imwrite(str(rgm_path), rgm_frame):
-                result['rgm_frame_path'] = str(rgm_path.relative_to(Path.cwd()))
-                print(f"[CaptureManager] Saved RGM: {result['rgm_frame_path']}")
-            else:
-                print("[CaptureManager] Failed to save RGM frame")
-        else:
-            print("[CaptureManager] No RGM frame available")
+                result['rgm_frame_path'] = str(rgm_path.as_posix())
         
         return result
     
@@ -253,17 +299,14 @@ class CaptureManager:
             if not managed:
                 return None
             
-            # Get center coordinates (5000, 5000 in normalized 0-10000 space)
             client = managed.get_temperature_client()
             result = client.get_dot_temperature(5000, 5000)
             
             if result:
                 temp_c, _, _ = result
-                print(f"[CaptureManager] GeoVision temp: {temp_c:.2f}°C")
                 return temp_c
-        except Exception as e:
-            print(f"[CaptureManager] Error getting GeoVision temp: {e}")
-        
+        except Exception:
+            pass
         return None
     
     def _get_rgm_temperature(self) -> Optional[float]:
@@ -271,13 +314,9 @@ class CaptureManager:
         try:
             center_data = self.rgm_stream.latest_center()
             if center_data and 'temp_c' in center_data:
-                temp_c = center_data['temp_c']
-                if temp_c is not None:
-                    print(f"[CaptureManager] RGM temp: {temp_c:.2f}°C")
-                    return temp_c
-        except Exception as e:
-            print(f"[CaptureManager] Error getting RGM temp: {e}")
-        
+                return center_data['temp_c']
+        except Exception:
+            pass
         return None
     
     def _log_to_csv(self, result: Dict[str, Any]) -> None:
@@ -299,9 +338,8 @@ class CaptureManager:
                     result['rgm_temp_c'],
                     result['notes']
                 ])
-            print(f"[CaptureManager] Logged to CSV: {self.csv_file}")
         except Exception as e:
-            print(f"[CaptureManager] CSV write error: {e}")
+            print(f"[Error] CSV write failed: {e}")
     
     @staticmethod
     def _sanitize_filename(text: str) -> str:

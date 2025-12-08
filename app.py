@@ -32,10 +32,10 @@ def create_rgm_stream() -> Optional[RGMThermalStream]:
             c_max_c=float(os.getenv("RGM_TEMP_MAX_C", "40.0")),
         )
         stream.start()
-        print("[RGM] Thermal camera initialized")
+        print("[RGM] Camera ready")
         return stream
     except Exception as exc:
-        print(f"[RGM] Failed to initialize local thermal stream: {exc}")
+        print(f"[RGM] Not available: {exc}")
         return None
 
 
@@ -55,7 +55,7 @@ def create_app() -> Flask:
                 camera_id="default"
             )
         except Exception as e:
-            print(f"[App] Failed to add default camera: {e}")
+            print(f"[Error] Default camera failed: {e}")
     
     # Initialize RFID capture system
     capture_mgr = init_capture_manager(
@@ -72,7 +72,8 @@ def create_app() -> Flask:
         group=rfid_group,
         auto_start=bool(rfid_port)
     )
-    print(f"[App] RFID capture system initialized (port: {rfid_port or 'not configured'})")
+    if rfid_port:
+        print(f"[RFID] Configured on {rfid_port}")
 
     @atexit.register
     def shutdown():
@@ -144,20 +145,11 @@ def create_app() -> Flask:
     @app.route("/api/cameras/<camera_id>", methods=["DELETE"])
     def remove_camera(camera_id: str):
         """Remove a camera."""
-        print(f"[API] Delete request for camera: {camera_id}")
-        
-        # List available cameras for debugging
-        available = [c['id'] for c in camera_manager.get_camera_configs()]
-        print(f"[API] Available cameras before delete: {available}")
-        
         if camera_manager.remove_camera(camera_id):
-            print(f"[API] Successfully removed camera: {camera_id}")
             return jsonify({
                 "status": "ok",
                 "message": "Camera removed"
             })
-        
-        print(f"[API] Camera not found: {camera_id}")
         return jsonify({"error": "Camera not found"}), 404
     
     @app.route("/api/cameras/<camera_id>", methods=["PUT", "PATCH"])
@@ -228,40 +220,27 @@ def create_app() -> Flask:
     @app.route("/api/cameras/<camera_id>/temperature")
     def get_temperature(camera_id: str):
         """Get temperature at a specific pixel coordinate for a camera."""
-        print(f"[Temperature API] Request for camera: {camera_id}")
-        
         x = request.args.get("x", type=int)
         y = request.args.get("y", type=int)
         
         if x is None or y is None:
-            print(f"[Temperature API] Missing coordinates: x={x}, y={y}")
             return jsonify({"error": "Missing x or y parameter"}), 400
         
         if x < 0 or y < 0:
-            print(f"[Temperature API] Invalid coordinates: x={x}, y={y}")
             return jsonify({"error": "Coordinates must be non-negative"}), 400
         
         managed = camera_manager.get_camera(camera_id)
         if managed is None:
-            print(f"[Temperature API] Camera not found: {camera_id}")
-            # List available cameras for debugging
-            available = [c['id'] for c in camera_manager.get_camera_configs()]
-            print(f"[Temperature API] Available cameras: {available}")
             return jsonify({"error": f"Camera '{camera_id}' not found"}), 404
-        
-        print(f"[Temperature API] Camera: {camera_id}, Coords: ({x}, {y})")
         
         try:
             client = managed.get_temperature_client()
             result = client.get_dot_temperature(x, y)
             
             if result is None:
-                print(f"[Temperature API] get_dot_temperature returned None")
                 return jsonify({"error": "Failed to get temperature from camera"}), 500
             
             temp_c, resp_x, resp_y = result
-            
-            print(f"[Temperature API] Success: {temp_c}°C at ({resp_x}, {resp_y})")
             
             return jsonify({
                 "temperature": round(temp_c, 2),
@@ -270,7 +249,7 @@ def create_app() -> Flask:
                 "camera_id": camera_id
             })
         except Exception as e:
-            print(f"[Temperature API] Exception: {e}")
+            print(f"[Error] Temperature request failed: {e}")
             return jsonify({"error": f"Temperature request failed: {str(e)}"}), 500
 
     @app.route("/rgm/center_temperature")

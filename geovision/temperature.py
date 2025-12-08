@@ -35,8 +35,7 @@ class TemperatureClient:
             response = requests.get(url, auth=self._auth(), timeout=self.timeout)
             response.raise_for_status()
             return _parse_roi_response(response.text)
-        except requests.RequestException as exc:
-            print(f"TemperatureClient.get_roi_stats error: {exc}")
+        except requests.RequestException:
             return None
 
     def get_dot_temperature(self, x: int, y: int) -> Optional[Tuple[float, int, int]]:
@@ -51,13 +50,10 @@ class TemperatureClient:
         Returns:
             Tuple of (temperature_celsius, x_coord, y_coord) or None on error
         """
-        # Validate coordinates
         if x < 0 or y < 0:
-            print(f"[TemperatureClient] Invalid coordinates: ({x}, {y}) - must be non-negative")
             return None
             
         url = self._url("GetDotTemperature")
-        # Match exact XML structure from documentation
         payload = f"""<?xml version="1.0" encoding="UTF-8"?>
 <config version="1.0" xmlns="http://www.ipc.com/ver10">
     <dotTemperature>
@@ -67,7 +63,6 @@ class TemperatureClient:
 </config>"""
         headers = {"Content-Type": "application/xml"}
         try:
-            print(f"[TemperatureClient] Requesting temperature at ({x}, {y})")
             response = requests.post(
                 url,
                 data=payload,
@@ -76,18 +71,15 @@ class TemperatureClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            print(f"[TemperatureClient] Response received (status: {response.status_code})")
             return _parse_dot_response(response.text, self.temp_conversion_factor, self.temp_offset)
         except requests.Timeout:
-            print(f"[TemperatureClient] Request timed out after {self.timeout}s")
+            print(f"[Error] Temperature request timed out")
             return None
-        except requests.ConnectionError as exc:
-            print(f"[TemperatureClient] Connection error: {exc}")
+        except requests.ConnectionError:
+            print(f"[Error] Cannot connect to camera for temperature")
             return None
         except requests.RequestException as exc:
-            print(f"[TemperatureClient] Request error: {exc}")
-            if hasattr(exc, 'response') and exc.response is not None:
-                print(f"[TemperatureClient] Error response: {exc.response.text[:500]}")  # Limit response length
+            print(f"[Error] Temperature request failed: {exc}")
             return None
 
 
@@ -107,8 +99,7 @@ def get_dot_temperature(
 def _parse_roi_response(xml_text: str) -> Optional[Dict[str, float]]:
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as exc:
-        print(f"ROI XML parse error: {exc}\nResponse: {xml_text}")
+    except ET.ParseError:
         return None
 
     def _read(tag: str) -> Optional[float]:
@@ -127,19 +118,13 @@ def _parse_roi_response(xml_text: str) -> Optional[Dict[str, float]]:
 def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_offset: float = 0.0) -> Optional[Tuple[float, int, int]]:
     """
     Parse the GetDotTemperature API response.
-    Response structure should be in <config> with <dotTemperature> containing:
-    - <temperature> (value in hundredths, e.g., 2835 = 28.35°C)
-    - <hotX> (confirmed X coordinate)
-    - <hotY> (confirmed Y coordinate)
     """
     if not xml_text or not xml_text.strip():
-        print("[Parse Error] Empty XML response")
         return None
         
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as exc:
-        print(f"[Parse Error] XML parse error: {exc}")
+    except ET.ParseError:
         return None
 
     # Try to find nodes - they might be directly under root or in dotTemperature
@@ -149,25 +134,11 @@ def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_of
         x_node = dot_temp_elem.find(".//{*}hotX")
         y_node = dot_temp_elem.find(".//{*}hotY")
     else:
-        # Fallback: search in entire document
         temperature_node = root.find(".//{*}temperature")
         x_node = root.find(".//{*}hotX")
         y_node = root.find(".//{*}hotY")
     
-    # Check for missing nodes
-    missing = []
-    if temperature_node is None:
-        missing.append("temperature")
-    if x_node is None:
-        missing.append("hotX")
-    if y_node is None:
-        missing.append("hotY")
-    
-    if missing:
-        print(f"[Parse Error] Missing nodes: {', '.join(missing)}")
-        # List available nodes for debugging
-        available = [elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag for elem in root.iter()]
-        print(f"[Parse Error] Available nodes: {available[:20]}")  # Limit to first 20
+    if temperature_node is None or x_node is None or y_node is None:
         return None
 
     try:
@@ -176,21 +147,11 @@ def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_of
         y_raw = y_node.text
         
         if temp_raw is None or x_raw is None or y_raw is None:
-            print(f"[Parse Error] Node text is None: temp={temp_raw}, x={x_raw}, y={y_raw}")
             return None
         
-        temp_raw_int = int(temp_raw)
-        
-        # Use configured conversion factor (default: divide by 100 for hundredths)
-        temp = (float(temp_raw_int) / conversion_factor) + temp_offset
-        x_val = int(x_raw)
-        y_val = int(y_raw)
-        
-        print(f"[Parse] Temperature: {temp:.2f}°C (raw={temp_raw_int}) at ({x_val}, {y_val})")
-        
-        return temp, x_val, y_val
-    except (TypeError, ValueError) as e:
-        print(f"[Parse Error] Value conversion error: {e}")
+        temp = (float(int(temp_raw)) / conversion_factor) + temp_offset
+        return temp, int(x_raw), int(y_raw)
+    except (TypeError, ValueError):
         return None
 
 

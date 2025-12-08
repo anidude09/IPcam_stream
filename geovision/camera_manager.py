@@ -69,8 +69,6 @@ class ManagedCamera:
             name=f"{self.config.name}-Thermal"
         )
         self.thermal_stream.start()
-        
-        print(f"[CameraManager] Started streams for camera: {self.config.name} ({self.config.ip_address})")
     
     def stop_streams(self) -> None:
         """Stop all streams for this camera."""
@@ -80,7 +78,6 @@ class ManagedCamera:
         if self.thermal_stream:
             self.thermal_stream.stop()
             self.thermal_stream = None
-        print(f"[CameraManager] Stopped streams for camera: {self.config.name}")
     
     def get_temperature_client(self) -> TemperatureClient:
         """Get a temperature client for this camera."""
@@ -149,11 +146,10 @@ class CameraManager:
                 try:
                     managed.start_streams()
                 except Exception as e:
-                    print(f"[CameraManager] Failed to start streams for {name}: {e}")
-                    # Still add the camera but mark it as having issues
+                    print(f"[Error] Failed to start streams for {name}: {e}")
             
             self._cameras[camera_id] = managed
-            print(f"[CameraManager] Added camera: {name} (ID: {camera_id})")
+            print(f"[Camera] Added: {name} ({ip_address})")
             
             return config
     
@@ -174,8 +170,7 @@ class CameraManager:
             managed = self._cameras[camera_id]
             managed.stop_streams()
             del self._cameras[camera_id]
-            
-            print(f"[CameraManager] Removed camera: {managed.config.name}")
+            print(f"[Camera] Removed: {managed.config.name}")
             return True
     
     def get_camera(self, camera_id: str) -> Optional[ManagedCamera]:
@@ -239,7 +234,7 @@ class CameraManager:
                 try:
                     managed.start_streams()
                 except Exception as e:
-                    print(f"[CameraManager] Failed to restart streams: {e}")
+                    print(f"[Error] Failed to restart streams: {e}")
             
             return new_config
     
@@ -249,7 +244,6 @@ class CameraManager:
             for managed in self._cameras.values():
                 managed.stop_streams()
             self._cameras.clear()
-            print("[CameraManager] All cameras shut down")
 
 
 # Global camera manager instance
