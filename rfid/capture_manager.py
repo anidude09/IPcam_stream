@@ -1,10 +1,9 @@
 """
 RFID Capture Manager - Captures frames from all camera streams when RFID tag is scanned.
-Saves frames to disk and logs metadata to CSV.
+Saves frames to disk and logs metadata to Excel with clickable hyperlinks.
 """
 from __future__ import annotations
 
-import csv
 import os
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +11,9 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 
 import cv2
 import numpy as np
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, Alignment
+from openpyxl.utils import get_column_letter
 
 if TYPE_CHECKING:
     from geovision.camera_manager import CameraManager
@@ -21,59 +23,71 @@ if TYPE_CHECKING:
 # Default paths (relative to project root)
 DEFAULT_DATA_DIR = "data"
 DEFAULT_CAPTURES_DIR = "data/captures"
-DEFAULT_CSV_FILE = "data/cattle_captures.csv"
+DEFAULT_EXCEL_FILE = "data/cattle_captures.xlsx"
 
 
 class CaptureManager:
     """
     Manages RFID-triggered frame captures from multiple camera streams.
-    Saves frames as JPEG files and logs metadata to CSV.
+    Saves frames as JPEG files and logs metadata to Excel.
     """
+    
+    # Column headers for Excel file
+    HEADERS = [
+        'EID', 'Timestamp', 'Date', 'Time', 'Group', 'Camera ID',
+        'RGB Frame', 'Thermal Frame', 'RGM Frame',
+        'GeoVision Temp (°C)', 'RGM Temp (°C)', 'Notes'
+    ]
     
     def __init__(
         self,
         data_dir: str = DEFAULT_DATA_DIR,
         captures_dir: str = DEFAULT_CAPTURES_DIR,
-        csv_file: str = DEFAULT_CSV_FILE,
+        excel_file: str = DEFAULT_EXCEL_FILE,
         camera_manager: Optional['CameraManager'] = None,
         rgm_stream: Optional['RGMThermalStream'] = None,
     ):
         self.data_dir = Path(data_dir)
         self.captures_dir = Path(captures_dir)
-        self.csv_file = Path(csv_file)
+        self.excel_file = Path(excel_file)
         self.camera_manager = camera_manager
         self.rgm_stream = rgm_stream
         
         # Ensure directories exist
         self._setup_directories()
         
-        # Initialize CSV if needed
-        self._setup_csv()
+        # Initialize Excel if needed
+        self._setup_excel()
     
     def _setup_directories(self) -> None:
         """Create data directories if they don't exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.captures_dir.mkdir(parents=True, exist_ok=True)
     
-    def _setup_csv(self) -> None:
-        """Initialize CSV file with headers if it doesn't exist."""
-        if not self.csv_file.exists():
-            with open(self.csv_file, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    'eid',
-                    'timestamp',
-                    'date',
-                    'time',
-                    'group',
-                    'camera_id',
-                    'rgb_frame_path',
-                    'thermal_frame_path',
-                    'rgm_frame_path',
-                    'geovision_temp_c',
-                    'rgm_temp_c',
-                    'notes'
-                ])
+    def _setup_excel(self) -> None:
+        """Initialize Excel file with headers if it doesn't exist."""
+        if not self.excel_file.exists():
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Cattle Captures"
+            
+            # Add headers with styling
+            header_font = Font(bold=True)
+            for col, header in enumerate(self.HEADERS, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Set column widths
+            column_widths = [20, 22, 12, 10, 15, 12, 25, 25, 25, 18, 15, 20]
+            for col, width in enumerate(column_widths, 1):
+                ws.column_dimensions[get_column_letter(col)].width = width
+            
+            # Freeze header row
+            ws.freeze_panes = 'A2'
+            
+            wb.save(self.excel_file)
+            print(f"[Capture] Created Excel file: {self.excel_file}")
     
     def capture_on_rfid_scan(
         self,
@@ -144,8 +158,8 @@ class CaptureManager:
         else:
             result['errors'].append('No RGM stream configured')
         
-        # Log to CSV
-        self._log_to_csv(result)
+        # Log to Excel
+        self._log_to_excel(result)
         
         result['success'] = len(result['errors']) == 0 or (
             result['rgb_frame_path'] or 
@@ -275,7 +289,7 @@ class CaptureManager:
         """Capture frame from RGM thermal camera (already has overlay)."""
         result = {'rgm_frame_path': '', 'rgm_temp_c': None}
         
-        # Get RGM center temperature for CSV
+        # Get RGM center temperature for Excel
         try:
             center_data = self.rgm_stream.latest_center()
             if center_data and 'temp_c' in center_data:
@@ -292,54 +306,61 @@ class CaptureManager:
         
         return result
     
-    def _get_geovision_temperature(self, camera_id: str) -> Optional[float]:
-        """Get center temperature from GeoVision thermal camera."""
+    def _log_to_excel(self, result: Dict[str, Any]) -> None:
+        """Append capture result to Excel file with clickable hyperlinks."""
         try:
-            managed = self.camera_manager.get_camera(camera_id)
-            if not managed:
-                return None
+            wb = load_workbook(self.excel_file)
+            ws = wb.active
             
-            client = managed.get_temperature_client()
-            result = client.get_dot_temperature(5000, 5000)
+            # Find next empty row
+            next_row = ws.max_row + 1
             
-            if result:
-                temp_c, _, _ = result
-                return temp_c
-        except Exception:
-            pass
-        return None
-    
-    def _get_rgm_temperature(self) -> Optional[float]:
-        """Get center temperature from RGM thermal camera."""
-        try:
-            center_data = self.rgm_stream.latest_center()
-            if center_data and 'temp_c' in center_data:
-                return center_data['temp_c']
-        except Exception:
-            pass
-        return None
-    
-    def _log_to_csv(self, result: Dict[str, Any]) -> None:
-        """Append capture result to CSV file."""
-        try:
-            with open(self.csv_file, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    result['eid'],
-                    result['timestamp'],
-                    result['date'],
-                    result['time'],
-                    result['group'],
-                    result['camera_id'],
-                    result['rgb_frame_path'],
-                    result['thermal_frame_path'],
-                    result['rgm_frame_path'],
-                    result['geovision_temp_c'],
-                    result['rgm_temp_c'],
-                    result['notes']
-                ])
+            # Hyperlink style (blue, underlined)
+            link_font = Font(color="0000FF", underline="single")
+            
+            # Add data
+            ws.cell(row=next_row, column=1, value=result['eid'])
+            ws.cell(row=next_row, column=2, value=result['timestamp'])
+            ws.cell(row=next_row, column=3, value=result['date'])
+            ws.cell(row=next_row, column=4, value=result['time'])
+            ws.cell(row=next_row, column=5, value=result['group'])
+            ws.cell(row=next_row, column=6, value=result['camera_id'])
+            
+            # RGB Frame - hyperlink
+            rgb_path = result['rgb_frame_path']
+            if rgb_path:
+                cell = ws.cell(row=next_row, column=7, value="RGB")
+                cell.hyperlink = rgb_path
+                cell.font = link_font
+            else:
+                ws.cell(row=next_row, column=7, value="-")
+            
+            # Thermal Frame - hyperlink
+            thermal_path = result['thermal_frame_path']
+            if thermal_path:
+                cell = ws.cell(row=next_row, column=8, value="Thermal")
+                cell.hyperlink = thermal_path
+                cell.font = link_font
+            else:
+                ws.cell(row=next_row, column=8, value="-")
+            
+            # RGM Frame - hyperlink
+            rgm_path = result['rgm_frame_path']
+            if rgm_path:
+                cell = ws.cell(row=next_row, column=9, value="RGM")
+                cell.hyperlink = rgm_path
+                cell.font = link_font
+            else:
+                ws.cell(row=next_row, column=9, value="-")
+            
+            # Temperatures
+            ws.cell(row=next_row, column=10, value=result['geovision_temp_c'] or "-")
+            ws.cell(row=next_row, column=11, value=result['rgm_temp_c'] or "-")
+            ws.cell(row=next_row, column=12, value=result['notes'] or "")
+            
+            wb.save(self.excel_file)
         except Exception as e:
-            print(f"[Error] CSV write failed: {e}")
+            print(f"[Error] Excel write failed: {e}")
     
     @staticmethod
     def _sanitize_filename(text: str) -> str:

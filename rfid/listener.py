@@ -5,6 +5,7 @@ Triggers frame captures when tags are scanned.
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from typing import Optional, Callable, List, TYPE_CHECKING
@@ -157,6 +158,16 @@ class RFIDListener:
         """Check if listener is running."""
         return self._running and self._thread is not None and self._thread.is_alive()
     
+    @staticmethod
+    def _clean_eid(raw_text: str) -> str:
+        """
+        Extract clean EID from raw scanner data.
+        AWR300 sends control characters around the actual tag ID.
+        We extract only alphanumeric characters (the actual EID).
+        """
+        # Extract only digits and letters (the actual tag ID)
+        return re.sub(r'[^a-zA-Z0-9]', '', raw_text)
+    
     def _listen_loop(self) -> None:
         """Main listening loop (runs in background thread)."""
         while self._running:
@@ -170,12 +181,18 @@ class RFIDListener:
                 if not line:
                     continue
                 
-                text = line.decode('ascii', errors='ignore').strip()
-                if not text or self._is_duplicate(text):
+                # Decode and clean control characters
+                raw_text = line.decode('ascii', errors='ignore').strip()
+                if not raw_text:
                     continue
                 
-                print(f"[RFID] Tag scanned: {text}")
-                self._handle_scan(text)
+                # Extract clean EID (only alphanumeric)
+                eid = self._clean_eid(raw_text)
+                if not eid or self._is_duplicate(eid):
+                    continue
+                
+                print(f"[RFID] Tag scanned: {eid}")
+                self._handle_scan(eid)
                 
             except serial.SerialException:
                 self.disconnect()
