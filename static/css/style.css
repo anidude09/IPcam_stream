@@ -287,6 +287,37 @@ main {
   color: #999;
 }
 
+/* ArUco Detection Badge */
+.aruco-container {
+  position: relative;
+  min-height: 200px;
+}
+
+.aruco-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid #00c9c9;
+  color: #aaffff;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5);
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.aruco-badge.detected {
+  border-color: #00e680;
+  color: #aaffcc;
+}
+
+.aruco-badge.muted {
+  border-color: #555;
+  color: #999;
+}
+
 /* Footer Styles */
 footer {
   text-align: center;

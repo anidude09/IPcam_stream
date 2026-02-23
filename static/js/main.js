@@ -532,6 +532,45 @@
   /**
    * Force RGB and thermal streams to reconnect by busting cache.
    */
+  // ---------------------------------------------------------------
+  // ArUco detection badge polling
+  // ---------------------------------------------------------------
+  const arucoBadge = document.getElementById('aruco-badge');
+  const arucoPollIntervalMs = 1000;
+
+  async function pollArucoDetections() {
+    if (!arucoBadge) return;
+    try {
+      const response = await fetch('/aruco/detections', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+
+      if (data.count > 0) {
+        const idList = data.ids.map(id => `#${id}`).join(', ');
+        arucoBadge.textContent = `Detected: ${idList}`;
+        arucoBadge.classList.remove('muted');
+        arucoBadge.classList.add('detected');
+      } else {
+        arucoBadge.textContent = 'Scanning...';
+        arucoBadge.classList.remove('detected');
+        arucoBadge.classList.add('muted');
+      }
+    } catch (error) {
+      console.error('[ArUco] Detections fetch failed:', error);
+      arucoBadge.textContent = 'Unavailable';
+      arucoBadge.classList.remove('detected');
+      arucoBadge.classList.add('muted');
+    } finally {
+      setTimeout(pollArucoDetections, arucoPollIntervalMs);
+    }
+  }
+
+  if (arucoBadge) {
+    arucoBadge.textContent = 'Scanning...';
+    arucoBadge.classList.add('muted');
+    pollArucoDetections();
+  }
+
   function refreshGeoVisionStreams() {
     const timestamp = Date.now();
     if (rgbImg) {

@@ -10,6 +10,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request
 
 from geovision.config import DEFAULT_CREDENTIALS, RGB_STREAM, THERMAL_STREAM, CameraCredentials
 from geovision.streams import RTSPStream
+from geovision.aruco_stream import ArucoStream
 from geovision.temperature import TemperatureClient
 from rgm.streaming import RGMThermalStream
 
@@ -52,12 +53,23 @@ def create_app() -> Flask:
     streams = create_streams(current_credentials)
     rgm_stream = create_rgm_stream()
 
+    # ArUco detection stream (RGB feed + marker overlay, detect every 10 frames)
+    aruco_stream = ArucoStream(
+        credentials=current_credentials,
+        profile=RGB_STREAM,
+        name="ArUco",
+        detect_every_n=10,
+    )
+    aruco_stream.start()
+    print("[ArUco] Detection stream initialized")
+
     @atexit.register
     def shutdown_streams() -> None:
         for stream in streams.values():
             stream.stop()
         if rgm_stream:
             rgm_stream.stop()
+        aruco_stream.stop()
 
     @app.route("/")
     def index():
@@ -134,6 +146,19 @@ def create_app() -> Flask:
             rgm_stream.mjpeg_generator(framerate_hint=15.0),
             mimetype="multipart/x-mixed-replace; boundary=frame",
         )
+
+    @app.route("/video/aruco")
+    def video_aruco():
+        """Annotated RGB stream with ArUco marker overlays."""
+        return Response(
+            aruco_stream.mjpeg_generator(framerate_hint=RGB_STREAM.expected_fps),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
+
+    @app.route("/aruco/detections")
+    def aruco_detections():
+        """Return the latest ArUco detection results as JSON."""
+        return jsonify(aruco_stream.latest_detections())
 
     @app.route("/rgm/center_temperature")
     def rgm_center_temperature():
