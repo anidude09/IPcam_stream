@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Generator, Optional, Tuple
+from typing import Dict, Generator, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -31,8 +31,11 @@ class RTSPStream:
         self._capture: Optional[cv2.VideoCapture] = None
         self._lock = threading.Lock()
         self._latest_frame: Optional[np.ndarray] = None
+        self._frame_id: int = 0
         self._running = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._jpeg_cache_lock = threading.Lock()
+        self._jpeg_cache: Dict[int, Tuple[int, bytes]] = {}
 
     @property
     def rtsp_url(self) -> str:
@@ -60,6 +63,11 @@ class RTSPStream:
                 return None
             return self._latest_frame.copy() if copy else self._latest_frame
 
+    def _set_latest_frame(self, frame: np.ndarray) -> None:
+        with self._lock:
+            self._latest_frame = frame
+            self._frame_id += 1
+
     def frame_generator(self, wait_timeout: float = 0.1) -> Generator[np.ndarray, None, None]:
         """Yield frames as they arrive. Blocks until frames become available."""
         while self._running.is_set():
@@ -69,23 +77,59 @@ class RTSPStream:
             else:
                 time.sleep(wait_timeout)
 
-    def mjpeg_generator(self, framerate_hint: Optional[float] = None) -> Generator[bytes, None, None]:
-        """Yield multipart JPEG bytes suitable for Flask streaming responses."""
+    def mjpeg_generator(
+        self,
+        framerate_hint: Optional[float] = None,
+        jpeg_quality: int = 80,
+        max_width: Optional[int] = None,
+    ) -> Generator[bytes, None, None]:
+        """Yield multipart JPEG bytes suitable for Flask streaming responses.
+
+        Original defaults (for fallback): jpeg_quality=95 (OpenCV default),
+        framerate_hint used as-is with full sleep.
+        """
         delay = 1.0 / framerate_hint if framerate_hint and framerate_hint > 0 else 0.0
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality]
+        last_sent_frame_id = -1
         while self._running.is_set():
-            frame = self.latest_frame(copy=True)
+            with self._lock:
+                if self._latest_frame is None:
+                    frame = None
+                    frame_id = -1
+                else:
+                    # Skip encoding until a new captured frame arrives.
+                    if self._frame_id == last_sent_frame_id:
+                        frame = None
+                    else:
+                        frame = self._latest_frame.copy()
+                    frame_id = self._frame_id
             if frame is None:
-                time.sleep(0.05)
+                time.sleep(0.002)
                 continue
 
-            success, encoded = cv2.imencode(".jpg", frame)
-            if not success:
-                continue
+            encoded_bytes: Optional[bytes] = None
+            with self._jpeg_cache_lock:
+                cached = self._jpeg_cache.get(jpeg_quality)
+                if cached and cached[0] == frame_id:
+                    encoded_bytes = cached[1]
+            if encoded_bytes is None:
+                frame_to_encode = frame
+                if max_width and max_width > 0 and frame.shape[1] > max_width:
+                    scale = max_width / float(frame.shape[1])
+                    new_h = max(1, int(frame.shape[0] * scale))
+                    frame_to_encode = cv2.resize(frame, (max_width, new_h), interpolation=cv2.INTER_AREA)
+                success, encoded = cv2.imencode(".jpg", frame_to_encode, encode_params)
+                if not success:
+                    continue
+                encoded_bytes = encoded.tobytes()
+                with self._jpeg_cache_lock:
+                    self._jpeg_cache[jpeg_quality] = (frame_id, encoded_bytes)
 
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + encoded.tobytes() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + encoded_bytes + b"\r\n"
             )
+            last_sent_frame_id = frame_id
 
             if delay:
                 time.sleep(delay)
@@ -105,8 +149,7 @@ class RTSPStream:
                 time.sleep(self.reconnect_delay)
                 continue
 
-            with self._lock:
-                self._latest_frame = frame
+            self._set_latest_frame(frame)
 
     def _ensure_capture(self) -> Optional[cv2.VideoCapture]:
         if self._capture and self._capture.isOpened():

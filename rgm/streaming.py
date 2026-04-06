@@ -40,6 +40,9 @@ class RGMThermalStream:
         self._lock = threading.Lock()
 
         self._latest_frame: Optional[np.ndarray] = None
+        self._frame_id: int = 0
+        self._jpeg_cache_lock = threading.Lock()
+        self._jpeg_cache: Dict[int, Tuple[int, bytes]] = {}
         self._last_center: CenterReading = {"raw": None, "temp_c": None, "temp_f": None}
         self._frame_counter = 0
 
@@ -68,26 +71,53 @@ class RGMThermalStream:
                 return None
             return self._latest_frame.copy() if copy else self._latest_frame
 
+    def _set_latest_frame(self, frame: np.ndarray) -> None:
+        with self._lock:
+            self._latest_frame = frame
+            self._frame_id += 1
+
     def latest_center(self) -> CenterReading:
         with self._lock:
             return dict(self._last_center)
 
     def mjpeg_generator(self, framerate_hint: Optional[float] = None) -> Iterable[bytes]:
         delay = 1.0 / framerate_hint if framerate_hint and framerate_hint > 0 else 0.0
+        jpeg_quality = 75
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality]
+        last_sent_frame_id = -1
         while self._running.is_set():
-            frame = self.latest_frame(copy=True)
+            with self._lock:
+                if self._latest_frame is None:
+                    frame = None
+                    frame_id = -1
+                else:
+                    if self._frame_id == last_sent_frame_id:
+                        frame = None
+                    else:
+                        frame = self._latest_frame.copy()
+                    frame_id = self._frame_id
             if frame is None:
-                time.sleep(0.05)
+                time.sleep(0.002)
                 continue
 
-            success, encoded = cv2.imencode(".jpg", frame)
-            if not success:
-                continue
+            encoded_bytes: Optional[bytes] = None
+            with self._jpeg_cache_lock:
+                cached = self._jpeg_cache.get(jpeg_quality)
+                if cached and cached[0] == frame_id:
+                    encoded_bytes = cached[1]
+            if encoded_bytes is None:
+                success, encoded = cv2.imencode(".jpg", frame, encode_params)
+                if not success:
+                    continue
+                encoded_bytes = encoded.tobytes()
+                with self._jpeg_cache_lock:
+                    self._jpeg_cache[jpeg_quality] = (frame_id, encoded_bytes)
 
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + encoded.tobytes() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + encoded_bytes + b"\r\n"
             )
+            last_sent_frame_id = frame_id
 
             if delay:
                 time.sleep(delay)
@@ -108,8 +138,8 @@ class RGMThermalStream:
                 continue
 
             vis_frame, center = self._process_frame(cap, frame)
+            self._set_latest_frame(vis_frame)
             with self._lock:
-                self._latest_frame = vis_frame
                 self._last_center = center
 
     def _process_frame(

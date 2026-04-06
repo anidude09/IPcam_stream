@@ -5,6 +5,10 @@
 
 (function() {
   'use strict';
+  const DEBUG_LOGS = false;
+  if (!DEBUG_LOGS) {
+    console.log = () => {};
+  }
 
   // DOM Elements
   const thermalImg = document.getElementById('thermal-img');
@@ -15,6 +19,9 @@
   const thermalTemp = document.getElementById('thermal-temp');
   const rgmTemp = document.getElementById('rgm-temp');
   const rgmContainer = document.getElementById('rgm-container');
+  const arucoContainer = document.getElementById('aruco-container');
+  const barcodeContainer = document.getElementById('barcode-container');
+  const barcodeImg = document.getElementById('barcode-img');
   const geovisionForm = document.getElementById('geovision-form');
   const geovisionStatus = document.getElementById('geovision-status');
 
@@ -24,6 +31,8 @@
   const rgmPollIntervalMs = 1000;
   let rgmPollHandle = null;
   const rgmAvailable = rgmContainer ? rgmContainer.dataset.available === 'true' : false;
+  const arucoAvailable = arucoContainer ? arucoContainer.dataset.available === 'true' : false;
+  const barcodeAvailable = barcodeContainer ? barcodeContainer.dataset.available === 'true' : false;
   
   // Coordinate system configuration
   // If camera uses flipped X coordinates (0,0 at top-right instead of top-left)
@@ -565,10 +574,79 @@
     }
   }
 
-  if (arucoBadge) {
+  if (arucoAvailable && arucoBadge) {
     arucoBadge.textContent = 'Scanning...';
     arucoBadge.classList.add('muted');
     pollArucoDetections();
+  }
+
+  // ---------------------------------------------------------------
+  // Barcode detection badge polling
+  // ---------------------------------------------------------------
+  const barcodeBadge = document.getElementById('barcode-badge');
+  const barcodePollIntervalMs = 1000;
+
+  async function pollBarcodeDetections() {
+    if (!barcodeBadge) return;
+    try {
+      const response = await fetch('/barcode/detections', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+
+      if (data.count > 0) {
+        const idList = Array.isArray(data.ids) ? data.ids.map(id => `#${id}`).join(', ') : '';
+        const device = data.device ? ` [${data.device}]` : '';
+        if (idList) {
+          barcodeBadge.textContent = `Detected: ${idList}${device}`;
+        } else {
+          barcodeBadge.textContent = `Detected: ${data.count} barcode(s)${device}`;
+        }
+        barcodeBadge.classList.remove('muted');
+        barcodeBadge.classList.add('detected');
+      } else {
+        const device = data.device ? ` (${data.device})` : '';
+        barcodeBadge.textContent = `Scanning...${device}`;
+        barcodeBadge.classList.remove('detected');
+        barcodeBadge.classList.add('muted');
+      }
+    } catch (error) {
+      console.error('[Barcode] Detections fetch failed:', error);
+      barcodeBadge.textContent = 'Unavailable';
+      barcodeBadge.classList.remove('detected');
+      barcodeBadge.classList.add('muted');
+    } finally {
+      setTimeout(pollBarcodeDetections, barcodePollIntervalMs);
+    }
+  }
+
+  if (barcodeAvailable && barcodeBadge) {
+    barcodeBadge.textContent = 'Scanning...';
+    barcodeBadge.classList.add('muted');
+    pollBarcodeDetections();
+  }
+
+  // If barcode stream fails during startup (service warming up), retry automatically.
+  if (barcodeAvailable && barcodeImg) {
+    let barcodeRetryHandle = null;
+
+    function reconnectBarcodeStream() {
+      const ts = Date.now();
+      barcodeImg.src = `/video/barcode?ts=${ts}`;
+    }
+
+    barcodeImg.addEventListener('error', () => {
+      if (barcodeRetryHandle) {
+        clearTimeout(barcodeRetryHandle);
+      }
+      barcodeRetryHandle = setTimeout(reconnectBarcodeStream, 1500);
+    });
+
+    barcodeImg.addEventListener('load', () => {
+      if (barcodeRetryHandle) {
+        clearTimeout(barcodeRetryHandle);
+        barcodeRetryHandle = null;
+      }
+    });
   }
 
   function refreshGeoVisionStreams() {

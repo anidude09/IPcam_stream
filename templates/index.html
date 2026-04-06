@@ -42,11 +42,17 @@
       <section class="stream">
         <h2>GeoVision Thermal <span class="stream-hint">(Click to measure)</span></h2>
         <div class="stream-container" id="thermal-container">
+          {% if thermal_available %}
           <img class="clickable" id="thermal-img" data-stream="thermal" src="/video/thermal" alt="Thermal Stream" />
           <div class="thermal-overlay" id="thermal-overlay">
             <div class="thermal-crosshair" id="thermal-crosshair"></div>
             <div class="thermal-temp" id="thermal-temp"></div>
           </div>
+          {% else %}
+          <div class="stream-placeholder">
+            <p>Thermal stream disabled</p>
+          </div>
+          {% endif %}
         </div>
       </section>
       <section class="stream">
@@ -64,9 +70,28 @@
       </section>
       <section class="stream">
         <h2>ArUco Tracking <span class="stream-hint">(RGB + detection)</span></h2>
-        <div class="stream-container aruco-container" id="aruco-container">
+        <div class="stream-container aruco-container" id="aruco-container" data-available="{{ 'true' if aruco_available else 'false' }}">
+          {% if aruco_available %}
           <img id="aruco-img" src="/video/aruco" alt="ArUco Detection Stream" />
           <div class="aruco-badge" id="aruco-badge">Scanning...</div>
+          {% else %}
+          <div class="stream-placeholder">
+            <p>ArUco pipeline disabled</p>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+      <section class="stream">
+        <h2>Barcode Tracking <span class="stream-hint">(YOLO + decode)</span></h2>
+        <div class="stream-container aruco-container" id="barcode-container" data-available="{{ 'true' if barcode_available else 'false' }}">
+          {% if barcode_available %}
+          <img id="barcode-img" src="/video/barcode" alt="Barcode Detection Stream" />
+          <div class="aruco-badge" id="barcode-badge">Scanning...</div>
+          {% else %}
+          <div class="stream-placeholder">
+            <p>Barcode pipeline disabled</p>
+          </div>
+          {% endif %}
         </div>
       </section>
     </main>

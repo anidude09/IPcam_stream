@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Any, Dict, Optional, Tuple
 import xml.etree.ElementTree as ET
 
@@ -9,6 +10,14 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from .config import CameraCredentials, StreamProfile, DEFAULT_CREDENTIALS, THERMAL_STREAM
+
+
+TEMPERATURE_DEBUG = os.getenv("TEMPERATURE_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
+
+
+def _tlog(message: str) -> None:
+    if TEMPERATURE_DEBUG:
+        print(message)
 
 
 @dataclass(frozen=True)
@@ -56,8 +65,8 @@ class TemperatureClient:
 </config>"""
         headers = {"Content-Type": "application/xml"}
         try:
-            print(f"[TemperatureClient] Requesting temperature at ({x}, {y}) from {url}")
-            print(f"[TemperatureClient] Request payload:\n{payload}")
+            _tlog(f"[TemperatureClient] Requesting temperature at ({x}, {y}) from {url}")
+            _tlog(f"[TemperatureClient] Request payload:\n{payload}")
             response = requests.post(
                 url,
                 data=payload,
@@ -66,8 +75,8 @@ class TemperatureClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            print(f"[TemperatureClient] Response status: {response.status_code}")
-            print(f"[TemperatureClient] Response body:\n{response.text}")  # Full response for debugging
+            _tlog(f"[TemperatureClient] Response status: {response.status_code}")
+            _tlog(f"[TemperatureClient] Response body:\n{response.text}")
             return _parse_dot_response(response.text, self.temp_conversion_factor, self.temp_offset)
         except requests.RequestException as exc:
             print(f"[TemperatureClient] Request error: {exc}")
@@ -137,13 +146,13 @@ def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_of
         y_node = root.find(".//{*}hotY")
     
     # Debug: print all nodes found
-    print(f"[Parse Debug] Found nodes - temp: {temperature_node is not None}, hotX: {x_node is not None}, hotY: {y_node is not None}")
+    _tlog(f"[Parse Debug] Found nodes - temp: {temperature_node is not None}, hotX: {x_node is not None}, hotY: {y_node is not None}")
     if temperature_node is not None:
-        print(f"[Parse Debug] temperature node text: {temperature_node.text}")
+        _tlog(f"[Parse Debug] temperature node text: {temperature_node.text}")
     if x_node is not None:
-        print(f"[Parse Debug] hotX node text: {x_node.text}")
+        _tlog(f"[Parse Debug] hotX node text: {x_node.text}")
     if y_node is not None:
-        print(f"[Parse Debug] hotY node text: {y_node.text}")
+        _tlog(f"[Parse Debug] hotY node text: {y_node.text}")
     
     if temperature_node is None:
         print(f"[Parse Error] Could not find temperature node in XML")
@@ -171,18 +180,18 @@ def _parse_dot_response(xml_text: str, conversion_factor: float = 100.0, temp_of
         temp_tenths = float(temp_raw_int) / 10.0
         temp_direct = float(temp_raw_int)
         
-        print(f"[Parse Success] Raw values: temp_raw={temp_raw} (int={temp_raw_int}), x_raw={x_raw}, y_raw={y_raw}")
-        print(f"[Parse Success] Conversion options:")
-        print(f"  - Divided by 100: {temp_hundredths:.2f}°C")
-        print(f"  - Divided by 10:  {temp_tenths:.2f}°C")
-        print(f"  - Direct value:   {temp_direct:.2f}°C")
+        _tlog(f"[Parse Success] Raw values: temp_raw={temp_raw} (int={temp_raw_int}), x_raw={x_raw}, y_raw={y_raw}")
+        _tlog("[Parse Success] Conversion options:")
+        _tlog(f"  - Divided by 100: {temp_hundredths:.2f}°C")
+        _tlog(f"  - Divided by 10:  {temp_tenths:.2f}°C")
+        _tlog(f"  - Direct value:   {temp_direct:.2f}°C")
         
         # Use configured conversion factor
         temp = (float(temp_raw_int) / conversion_factor) + temp_offset
         x_val = int(x_raw)
         y_val = int(y_raw)
         
-        print(f"[Parse Success] Using: temp={temp:.2f}°C (raw={temp_raw_int}, factor={conversion_factor}, offset={temp_offset}), x={x_val}, y={y_val}")
+        _tlog(f"[Parse Success] Using: temp={temp:.2f}°C (raw={temp_raw_int}, factor={conversion_factor}, offset={temp_offset}), x={x_val}, y={y_val}")
         
         return temp, x_val, y_val
     except (TypeError, ValueError) as e:

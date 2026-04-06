@@ -40,6 +40,11 @@ DEFAULT_CREDENTIALS = CameraCredentials(
 )
 
 RGB_STREAM = StreamProfile(profile_id=os.getenv("GEOVISION_RGB_PROFILE", "profile1"), channel=1, expected_fps=30.0)
+RGB_PREVIEW_STREAM = StreamProfile(
+    profile_id=os.getenv("GEOVISION_RGB_PREVIEW_PROFILE", "profile2"),
+    channel=1,
+    expected_fps=float(os.getenv("GEOVISION_RGB_PREVIEW_FPS", "30.0")),
+)
 THERMAL_STREAM = StreamProfile(profile_id=os.getenv("GEOVISION_THERMAL_PROFILE", "profile4"), channel=2, expected_fps=15.0)
 
 
@@ -53,6 +58,7 @@ __all__ = [
     "StreamProfile",
     "DEFAULT_CREDENTIALS",
     "RGB_STREAM",
+    "RGB_PREVIEW_STREAM",
     "THERMAL_STREAM",
     "configure_opencv_transport",
 ]
