@@ -48,7 +48,7 @@ Full documentation lives in the [`docs/`](docs/index.md) directory:
 | [**Installation**](docs/installation.md) | Python prerequisites, virtual environment, and dependency installation |
 | [**Quick Start**](docs/quick-start.md) | From zero to a running dashboard in under two minutes |
 | [**Web UI Guide**](docs/web-ui-guide.md) | Walkthrough of every pane in the browser dashboard |
-| [**Configuration**](docs/configuration.md) | Complete reference for all 30+ environment variables |
+| [**Configuration**](docs/configuration.md) | Complete reference for all  environment variables |
 | [**Architecture**](docs/architecture.md) | System design, camera protocols (RTSP, HTTP temperature API), and module-by-module code breakdown |
 | [**API Reference**](docs/api-reference.md) | Every HTTP endpoint with request/response examples |
 | [**Helper Scripts**](docs/helper-scripts.md) | Standalone tools for testing, recording, and debugging |
